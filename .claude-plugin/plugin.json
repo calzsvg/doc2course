@@ -1,9 +1,9 @@
 {
-  "name": "paper2video",
-  "description": "Turn an arXiv paper into a narrated, fact-checked explainer video (1080p MP4). Local TTS, no API keys, never uploads.",
-  "author": { "name": "Sunbin Kim", "url": "https://github.com/SunandBean" },
-  "homepage": "https://github.com/SunandBean/paper2video",
-  "repository": "https://github.com/SunandBean/paper2video",
+  "name": "doc2video",
+  "description": "Turn a paper, lecture slides or any PDF into a narrated, fact-checked explainer video (1080p MP4, chapters for long videos). Local TTS, no API keys, never uploads.",
+  "author": { "name": "calzsvg", "url": "https://github.com/calzsvg" },
+  "homepage": "https://github.com/calzsvg/doc2video",
+  "repository": "https://github.com/calzsvg/doc2video",
   "license": "MIT",
-  "keywords": ["arxiv", "paper", "video", "explainer", "tts", "threejs"]
+  "keywords": ["arxiv", "paper", "lecture", "slides", "pdf", "video", "explainer", "tts", "threejs", "codex"]
 }

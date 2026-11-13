@@ -106,6 +106,38 @@ await t('gpu: software renderers are recognised', async () => {
   for (const s of ['ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)', 'ANGLE (NVIDIA, Vulkan 1.3.277 (NVIDIA GeForce RTX 4090 (0x00002684)), NVIDIA)']) assert.ok(!isSoftware(s), s);
 });
 
+await t('publish: local PDF videos go next to the PDF, others to the videos folder', async () => {
+  const { publish } = await import('../scripts/lib.mjs');
+  delete process.env.P2V_OUT; process.env.P2V_OUT_EXPLICIT = '';   // as ./p2v runs it when the user set no P2V_OUT
+  const docs = path.join(tmp, 'CA'), out = path.join(tmp, 'videos');
+  fs.mkdirSync(docs);
+  fs.writeFileSync(path.join(docs, '02-logic.pdf'), '%PDF');
+  const mk = (job, meta, title) => {
+    fs.mkdirSync(path.join(jobs, job, 'paper'), { recursive: true }); fs.mkdirSync(path.join(jobs, job, 'build'), { recursive: true });
+    fs.writeFileSync(path.join(jobs, job, 'paper', 'meta.json'), JSON.stringify(meta));
+    fs.writeFileSync(path.join(jobs, job, 'script.json'), JSON.stringify({ title, lang: 'ko' }));
+    const mp4 = path.join(jobs, job, 'build', job + '.mp4'); fs.writeFileSync(mp4, 'video ' + job);
+    return mp4;
+  };
+  const a = mk('lec', { source: 'local', file: path.join(docs, '02-logic.pdf') }, '조합 논리 1부: 게이트');
+  fs.writeFileSync(path.join(jobs, 'lec', 'build', 'chapters.txt'), '0:00 intro\n');
+  const d = publish(tmp, 'lec', a);
+  assert.equal(d, path.join(docs, '02-logic - 조합 논리 1부 - 게이트.mp4'));
+  assert.equal(fs.readFileSync(d, 'utf8'), 'video lec');
+  assert.ok(fs.existsSync(path.join(docs, '02-logic - 조합 논리 1부 - 게이트.chapters.txt')));
+  process.env.P2V_OUT = out;                                   // the default videos folder exported by ./p2v does not win ...
+  assert.equal(path.dirname(publish(tmp, 'lec', a)), docs);
+  process.env.P2V_OUT_EXPLICIT = '1';                          // ... but one the user set does
+  assert.equal(path.dirname(publish(tmp, 'lec', a)), out);
+  delete process.env.P2V_OUT; process.env.P2V_OUT_EXPLICIT = '';
+  const b = mk('2610.30340', { source: 'arxiv', title: 'Foundation4D: A Model' }, '');
+  process.env.P2V_HOME = tmp;
+  assert.equal(path.dirname(publish(tmp, '2610.30340', b)), path.join(tmp, 'videos'));
+  fs.chmodSync(docs, 0o500);                                   // unwritable source folder: fall back, do not fail
+  try { if (process.getuid && process.getuid() !== 0) assert.equal(path.dirname(publish(tmp, 'lec', a)), path.join(tmp, 'videos')); }
+  finally { fs.chmodSync(docs, 0o700); delete process.env.P2V_HOME; }
+});
+
 srv.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(failed ? `${failed} FAILED` : 'server tests: ALL PASS');

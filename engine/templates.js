@@ -138,28 +138,38 @@ export function wrapText(ctx, s, x, y, maxW, o = {}) {
 }
 
 // Inline math with sub/superscripts: 'g_t = g_s − (t − s) J_v^T g_s', 'V_{t}(z_0)'. Returns the drawn width.
+// Overbars (complement in Boolean algebra): '~A' bars one character, '~{AB}' bars a group: 'Y = ~A~B~C + A~B'.
 // Avoids relying on Unicode subscript glyphs, which many fonts lack.
 export function mathText(ctx, s, x, y, o = {}) {
   const { size = 48, color = C.white, alpha = 1, weight = 600, align = 'left', italic = true } = o;
   const toks = []; let i = 0;
   while (i < s.length) {
     const ch = s[i];
-    if ((ch === '_' || ch === '^') && i + 1 < s.length) {
+    if ((ch === '_' || ch === '^' || ch === '~') && i + 1 < s.length) {
       let body;
       if (s[i + 1] === '{') { const j = s.indexOf('}', i + 2); const end = j < 0 ? s.length : j; body = s.slice(i + 2, end); i = end + 1; }  // unclosed brace: rest of string
       else { body = s[i + 1]; i += 2; }
       toks.push({ t: body, k: ch });
     } else { const last = toks[toks.length - 1]; if (last && !last.k) last.t += ch; else toks.push({ t: ch, k: '' }); i++; }
   }
-  const fontFor = k => `${italic ? 'italic ' : ''}${weight} ${k ? size * .62 : size}px ${FONT}`;
-  ctx.save(); let w = 0; for (const t of toks) { ctx.font = fontFor(t.k); w += ctx.measureText(t.t).width + (t.k ? 2 : 0); } ctx.restore();
+  const small = k => k === '_' || k === '^';
+  const fontFor = k => `${italic ? 'italic ' : ''}${weight} ${small(k) ? size * .62 : size}px ${FONT}`;
+  const gap = k => (small(k) ? 2 : k === '~' ? 1 : 0);
+  const widthOf = t => (t.k === '~' && /[~_^]/.test(t.t) ? mathText(ctx, t.t, 0, 0, { ...o, align: 'left', alpha: 0 }) : (ctx.font = fontFor(t.k), ctx.measureText(t.t).width));
+  ctx.save(); let w = 0; for (const t of toks) w += widthOf(t) + gap(t.k); ctx.restore();
   let cx = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
   if (alpha > 0) {
-    ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.textBaseline = 'alphabetic';
+    ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.strokeStyle = color; ctx.textBaseline = 'alphabetic';
     for (const t of toks) {
       ctx.font = fontFor(t.k);
-      ctx.fillText(t.t, cx + (t.k ? 1 : 0), y + (t.k === '_' ? size * .22 : t.k === '^' ? -size * .42 : 0));
-      cx += ctx.measureText(t.t).width + (t.k ? 2 : 0);
+      const nested = t.k === '~' && /[~_^]/.test(t.t);
+      const tw = nested ? mathText(ctx, t.t, 0, 0, { ...o, align: 'left', alpha: 0 }) : ctx.measureText(t.t).width;
+      if (nested) { ctx.restore(); mathText(ctx, t.t, cx, y, { ...o, align: 'left' }); ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.strokeStyle = color; }
+      else ctx.fillText(t.t, cx + (small(t.k) ? 1 : 0), y + (t.k === '_' ? size * .22 : t.k === '^' ? -size * .42 : 0));
+      if (t.k === '~') {   // a bar over a group that has its own bars sits higher, so both levels stay visible
+        const by = y - size * (nested ? 1.04 : .86);
+        ctx.font = fontFor(t.k); ctx.lineWidth = Math.max(2, size * .06); ctx.beginPath(); ctx.moveTo(cx + size * .06, by); ctx.lineTo(cx + tw - size * .02, by); ctx.stroke(); }
+      cx += tw + gap(t.k);
     }
     ctx.restore();
   }
@@ -886,4 +896,342 @@ export function tabletopFrame(ctx, x, y, w, h, a, { eff = 'gripper', u = .5, v =
   }
   ctx.restore();
   rrect(ctx, x, y, w, h, 8, null, border, 2, a);
+}
+
+// ---------------------------------------------------------------- lectures and long-form videos
+// Templates for teaching videos (lecture slides, handouts, long paper walk-throughs). They draw no digits of their own
+// (chapter markers, choice letters, check marks), because every number on screen needs a claim.
+export const MONO = '"SF Mono", Menlo, "D2Coding", "Noto Sans Mono CJK KR", "Noto Sans Mono", monospace';
+
+function checkMark(ctx, cx, cy, color, a, s = 1) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = color; ctx.lineWidth = 4 * s; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(cx - 11 * s, cy); ctx.lineTo(cx - 3 * s, cy + 9 * s); ctx.lineTo(cx + 12 * s, cy - 10 * s); ctx.stroke(); ctx.restore();
+}
+
+// Chapter opener with the agenda on the right. chapters: ['Why indexes', 'B-trees', ...]; current: the chapter starting here.
+// Finished chapters get a check (cyan), the current one is green, later ones gray. kicker: small line above the title
+// ('Chapter', '다음 장'); title defaults to chapters[current]; sub: one-sentence promise of what this chapter teaches.
+export function chapterCard({ chapters, current = 0, kicker = '', title, sub = '' }) {
+  need(Array.isArray(chapters) && chapters.length, 'chapterCard needs chapters');
+  need(Number.isInteger(current) && current >= 0 && current < chapters.length, 'chapterCard current must index into chapters');
+  return {
+    draw(ctx, S) {
+      const a1 = eo(seg(S.t, .15, .9)), a2 = eo(seg(S.t, .5, 1.3));
+      if (kicker) txt(ctx, kicker, 120, 330, { size: 30, weight: 700, color: C.green, alpha: a1 });
+      txt(ctx, title ?? chapters[current], 120 - 24 * (1 - a1), 420, { size: 72, weight: 800, alpha: a1, maxW: 960 });
+      rrect(ctx, 124, 452, 180 * a1, 6, 3, C.green, null, 0, a1);
+      if (sub) wrapText(ctx, sub, 124, 520, 920, { size: 32, color: C.gray, alpha: a2 });
+      const n = chapters.length, x = 1160, w = 660, rowH = Math.min(86, 640 / n), y0 = 500 - rowH * n / 2, fs = Math.min(28, rowH * .38);
+      chapters.forEach((c, i) => {
+        const ai = a2 * eo(seg(S.t, .5 + i * .07, 1.1 + i * .07)), cur = i === current, done = i < current, y = y0 + i * rowH;
+        if (ai <= 0) return;
+        rrect(ctx, x, y + 5, w, rowH - 10, 12, cur ? 'rgba(118,185,0,.16)' : 'rgba(14,20,28,.75)', cur ? C.green : 'rgba(255,255,255,.1)', cur ? 3 : 1.5, ai * (done ? .7 : 1));
+        const cx = x + 36, cy = y + rowH / 2;
+        if (done) checkMark(ctx, cx, cy, C.cyan, ai * .85, .9);
+        else { ctx.save(); ctx.globalAlpha = ai; ctx.beginPath(); ctx.arc(cx, cy, 9, 0, Math.PI * 2);
+          if (cur) { ctx.fillStyle = C.green; ctx.fill(); } else { ctx.strokeStyle = C.gray; ctx.lineWidth = 2.5; ctx.stroke(); } ctx.restore(); }
+        txt(ctx, c, x + 66, cy + fs * .36, { size: fs, weight: cur ? 800 : 600, color: cur ? C.white : done ? C.cyan : C.gray, alpha: ai * (done ? .8 : 1), maxW: w - 96 });
+      });
+    }
+  };
+}
+
+// A term, its definition, and optionally a worked example and a common mistake, each revealed on its own sentence.
+// at: which sentence reveals each part (default { def: 0, example: 1, pitfall: 2 }); a part whose sentence does not exist stays hidden.
+// Invented numbers in `example` need an `example` claim; label it on screen with exampleLabel ('example', '예시').
+export function definitionCard({ term, gloss = '', def, example = '', exampleLabel = 'example', pitfall = '', pitfallLabel = 'common mistake',
+                                 at = {}, box = [100, 150, 1720, 700] }) {
+  need(term && def, 'definitionCard needs term and def');
+  const k = { def: 0, example: 1, pitfall: 2, ...at }, [x, y, w] = box;
+  return {
+    draw(ctx, S) {
+      const a0 = eo(seg(S.t, .1, .7));
+      txt(ctx, term, x, y + 70, { size: 62, weight: 800, color: C.green, alpha: a0, maxW: w });
+      if (gloss) txt(ctx, gloss, x, y + 120, { size: 28, color: C.gray, alpha: a0, maxW: w });
+      const ad = eo(seg(S.P(k.def), 0, .2)), y1 = y + 165;
+      if (ad > 0) { panel(ctx, x, y1, w, 200, ad); wrapText(ctx, def, x + 40, y1 + 66, w - 80, { size: 34, alpha: ad }); }
+      const y2 = y1 + 230, half = pitfall && example ? (w - 36) / 2 : w;
+      if (example) {
+        const ae = eo(seg(S.P(k.example), 0, .2));
+        if (ae > 0) { panel(ctx, x, y2, half, 230, ae, C.cyan); tag(ctx, exampleLabel, x + 30, y2 + 50, ae, { color: C.cyan, size: 22 });
+          wrapText(ctx, example, x + 30, y2 + 106, half - 60, { size: 28, alpha: ae }); }
+      }
+      if (pitfall) {
+        const xp = example ? x + half + 36 : x, ap = eo(seg(S.P(k.pitfall), 0, .2));
+        if (ap > 0) { panel(ctx, xp, y2, half, 230, ap, C.orange); tag(ctx, pitfallLabel, xp + 30, y2 + 50, ap, { color: C.orange, size: 22 });
+          wrapText(ctx, pitfall, xp + 30, y2 + 106, half - 60, { size: 28, alpha: ap }); }
+      }
+    }
+  };
+}
+
+// Check-your-understanding question. Sentence `ask` reads the question; give viewers time with "pauses": { "<ask>": 4 }
+// on the scene in script.json (a ring runs down during that silence). Sentence `reveal` marks the answer and shows `explain`.
+// choices: up to 4 short strings (none = open question); answer: index into choices. Choice letters are A, B, C, D.
+export function quizCard({ question, choices = [], answer = -1, explain = '', ask = 0, reveal = 1, label = 'quiz', box = [100, 150, 1720, 700] }) {
+  need(question, 'quizCard needs a question');
+  need(choices.length <= 4, 'quizCard: at most 4 choices fit above the subtitles');
+  need(!choices.length || (Number.isInteger(answer) && answer >= 0 && answer < choices.length), 'quizCard answer must index into choices');
+  const [x, y, w] = box, letters = 'ABCD';
+  return {
+    draw(ctx, S) {
+      const a = eo(seg(S.P(ask), 0, .12)), ar = eo(seg(S.P(reveal), 0, .2));
+      if (a <= 0) return;
+      tag(ctx, label, x, y + 30, a, { size: 22 });
+      const qEnd = wrapText(ctx, question, x, y + 100, w - 200, { size: 42, weight: 800, alpha: a });
+      const s0 = S.sents[ask], s1 = S.sents[ask + 1];
+      if (s0 && s1 && ar <= 0) {
+        const p = seg(S.t, s0.start + s0.dur, s1.start);
+        if (p > 0 && p < 1) {
+          const cx = x + w - 70, cy = y + 80;
+          ctx.save(); ctx.globalAlpha = a; ctx.lineWidth = 8; ctx.strokeStyle = 'rgba(255,255,255,.15)';
+          ctx.beginPath(); ctx.arc(cx, cy, 40, 0, Math.PI * 2); ctx.stroke();
+          ctx.strokeStyle = C.yellow; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(cx, cy, 40, -Math.PI / 2, -Math.PI / 2 + (1 - p) * Math.PI * 2); ctx.stroke(); ctx.restore();
+        }
+      }
+      choices.forEach((c, i) => {
+        const ai = a * eo(seg(S.P(ask), .1 + i * .08, .3 + i * .08)), cy = qEnd + 50 + i * 94, ok = i === answer, shown = ar > 0;
+        if (ai <= 0) return;
+        rrect(ctx, x, cy, w, 78, 14, ok && shown ? 'rgba(118,185,0,.18)' : 'rgba(14,20,28,.85)', ok && shown ? C.green : 'rgba(255,255,255,.14)', ok && shown ? 3 : 1.5, ai);
+        txt(ctx, letters[i], x + 36, cy + 50, { size: 30, weight: 800, color: ok && shown ? C.green : C.gray, alpha: ai });
+        txt(ctx, c, x + 90, cy + 50, { size: 30, weight: 700, color: shown && !ok ? C.gray : C.white, alpha: ai * (shown && !ok ? .6 : 1), maxW: w - 130 });
+        if (ok && shown) checkMark(ctx, x + w - 50, cy + 39, C.green, ar);
+      });
+      if (explain && ar > 0) wrapText(ctx, explain, x, qEnd + 50 + choices.length * 94 + 40, w, { size: 30, color: C.green, alpha: ar });
+    }
+  };
+}
+
+// Source code with a highlighted range per sentence. code: string with \n; steps: [{ sentence, lines: [from, to] (1-based,
+// inclusive), note }]. The latest step whose sentence has started is active; other lines dim. No line numbers are drawn.
+// Digits inside the code are on-screen numbers too: quote the code from the document (a `quote` claim with `page`) or
+// list them in allow_numbers with the reason ("literal in the lecture's example code").
+export function codeBlock({ title = '', code, steps = [], box = [100, 140, 1720, 720], size = 28, label = '' }) {
+  need(typeof code === 'string' && code.length, 'codeBlock needs code');
+  const lines = code.replace(/\t/g, '    ').split('\n'), [x, y, w, h] = box, lh = size * 1.45, top = y + (title ? 96 : 56);
+  need(top - y + lines.length * lh <= h, `codeBlock: ${lines.length} lines at size ${size} do not fit the box; split the code or lower size`);
+  return {
+    draw(ctx, S) {
+      const a = eo(seg(S.t, .1, .6));
+      if (a <= 0) return;
+      panel(ctx, x, y, w, h, a);
+      if (title) txt(ctx, title, x + 36, y + 54, { size: 26, weight: 800, color: C.gray, alpha: a, maxW: w - 300 });
+      if (label) tag(ctx, label, x + w - 30, y + 54, a, { align: 'right', color: C.cyan, size: 20 });
+      let cur = null, ca = 0;
+      for (const st of steps) { const p = S.P(st.sentence); if (p > 0) { cur = st; ca = eo(seg(p, 0, .15)); } }
+      if (cur) {
+        const [l0, l1] = cur.lines;
+        rrect(ctx, x + 18, top + (l0 - 1) * lh - size * 1.05, w - 36, (l1 - l0 + 1) * lh + size * .2, 10, 'rgba(118,185,0,.14)', C.green, 2, a * ca);
+      }
+      lines.forEach((l, i) => {
+        const on = !cur || (i + 1 >= cur.lines[0] && i + 1 <= cur.lines[1]);
+        ctx.save(); ctx.globalAlpha = a * (on ? 1 : lerp(1, .4, ca)); ctx.fillStyle = on ? C.white : C.gray;
+        ctx.font = `500 ${size}px ${MONO}`; ctx.fillText(l, x + 44, top + i * lh); ctx.restore();
+      });
+      if (cur && cur.note) tag(ctx, cur.note, x + w - 30, y + h - 26, a * ca, { align: 'right', color: C.green, size: 22 });
+    }
+  };
+}
+
+// Key takeaways that check off one by one. items: ['...'] or [{ text, sentence }] (default: item i on sentence i).
+export function recapList({ heading = 'Key takeaways', items, box = [160, 150, 1600, 700] }) {
+  need(Array.isArray(items) && items.length, 'recapList needs items');
+  const [x, y, w, h] = box, rowH = Math.min(118, (h - 100) / items.length), fs = Math.min(32, rowH * .32);
+  return {
+    draw(ctx, S) {
+      txt(ctx, heading, x, y + 52, { size: 46, weight: 800, alpha: eo(seg(S.t, .1, .6)), maxW: w });
+      items.forEach((it, i) => {
+        const { text, sentence = i } = typeof it === 'string' ? { text: it } : it;
+        const ai = eo(seg(S.P(sentence), 0, .2)), cy = y + 100 + i * rowH, ch = rowH - 16;
+        if (ai <= 0) return;
+        panel(ctx, x, cy, w, ch, ai);
+        checkMark(ctx, x + 46, cy + ch / 2, C.green, eo(seg(S.P(sentence), .1, .3)), 1.1);
+        txt(ctx, text, x + 96, cy + ch / 2 + fs * .36, { size: fs, weight: 700, alpha: ai, maxW: w - 130 });
+      });
+    }
+  };
+}
+
+// A page of the source document (paper/pages/p-NNN.jpg written by `p2v fetch`). Use it ONLY when meta.json figure_reuse
+// allows reuse (the user owns the material, or the license permits it) and credit it on screen. Async: the image is decoded
+// before the first frame. marks: highlight boxes in page fractions, [{ rect: [x0, y0, x1, y1], sentence, color }].
+// The credit is drawn text: digits in it ("p. 3") need allow_numbers ("page number of the source").
+export async function pageImage({ page, credit, job, box = [100, 130, 1100, 740], marks = [], sentence = 0 }) {
+  need(Number.isInteger(page) && page > 0, 'pageImage needs a page number');
+  need(credit, 'pageImage needs a credit line (source and why reuse is allowed)');
+  job = job || new URLSearchParams(location.search).get('job');
+  const img = new Image();
+  img.src = `/jobs/${encodeURIComponent(job)}/paper/pages/p-${String(page).padStart(3, '0')}.jpg`;
+  await img.decode();
+  const [bx, by, bw, bh] = box, sc = Math.min(bw / img.width, (bh - 40) / img.height), iw = img.width * sc, ih = img.height * sc, ix = bx + (bw - iw) / 2, iy = by;
+  return {
+    draw(ctx, S) {
+      const a = eo(seg(S.P(sentence), 0, .2));
+      if (a <= 0) return;
+      ctx.save(); ctx.globalAlpha = a; ctx.drawImage(img, ix, iy, iw, ih); ctx.restore();
+      rrect(ctx, ix, iy, iw, ih, 4, null, 'rgba(255,255,255,.35)', 2, a);
+      for (const m of marks) {
+        const am = a * eo(seg(S.P(m.sentence ?? sentence), 0, .2)), [x0, y0, x1, y1] = m.rect;
+        rrect(ctx, ix + x0 * iw, iy + y0 * ih, (x1 - x0) * iw, (y1 - y0) * ih, 6, 'rgba(255,209,102,.10)', m.color || C.yellow, 4, am);
+      }
+      txt(ctx, credit, ix, iy + ih + 32, { size: 19, color: C.gray, alpha: a, maxW: bw });
+    }
+  };
+}
+
+// ---------------------------------------------------------------- digital logic: gates, wires, truth tables, derivations
+// Gate symbol, inputs on the left, output on the right. kind: 'buf' | 'not' | 'and' | 'nand' | 'or' | 'nor' | 'xor' | 'xnor'.
+// (x, y) = top-left of the body, s = body height. n = number of inputs. Returns pin positions
+// { ins: [[x, y], ...], out: [x, y] } at the ends of the short input/output leads, for wiring.
+// enable: true adds an enable input on top of a buffer/inverter (tri-state), 'not' adds it with a bubble; pins.en is its end.
+export function drawGate(ctx, kind, x, y, s, { n, color = C.white, fill = 'rgba(14,20,28,.92)', lw = 3, alpha = 1, lead = .35, enable = false } = {}) {
+  need(['buf', 'not', 'and', 'nand', 'or', 'nor', 'xor', 'xnor'].includes(kind), `drawGate: unknown kind ${kind}`);
+  const one = kind === 'buf' || kind === 'not';
+  n = n ?? (one ? 1 : 2);
+  const isOr = kind === 'or' || kind === 'nor' || kind === 'xor' || kind === 'xnor', isX = kind === 'xor' || kind === 'xnor';
+  const bubble = kind === 'not' || kind === 'nand' || kind === 'nor' || kind === 'xnor', r = s * .09;
+  const w = one ? s * .9 : s * 1.25, bx = x + (isX ? s * .16 : 0), L = lead * s, oy = y + s / 2;
+  const curve = (x0, yy) => x0 + s * .2 * (1 - Math.pow((yy - oy) / (s / 2), 2));     // where an input meets a curved OR back
+  const ins = [];
+  for (let i = 0; i < n; i++) { const yy = y + s * (i + 1) / (n + 1); ins.push([x - L, yy, isX ? curve(x, yy) : isOr ? curve(bx, yy) : bx]); }
+  const ox = bx + w + (bubble ? 2 * r : 0);
+  const ex = bx + w * .45, pins = { ins: ins.map(p => [p[0], p[1]]), out: [ox + L, oy], en: enable ? [ex, y - s * .45] : null };
+  if (alpha <= 0) return pins;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.fillStyle = fill; ctx.lineWidth = lw; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  if (one) { ctx.moveTo(bx, y); ctx.lineTo(bx + w, oy); ctx.lineTo(bx, y + s); ctx.closePath(); }
+  else if (!isOr) { ctx.moveTo(bx, y); ctx.lineTo(bx + w - s / 2, y); ctx.arc(bx + w - s / 2, oy, s / 2, -Math.PI / 2, Math.PI / 2); ctx.lineTo(bx, y + s); ctx.closePath(); }
+  else { ctx.moveTo(bx, y); ctx.quadraticCurveTo(bx + w * .62, y, bx + w, oy); ctx.quadraticCurveTo(bx + w * .62, y + s, bx, y + s); ctx.quadraticCurveTo(bx + s * .4, oy, bx, y); }
+  ctx.fill(); ctx.stroke();
+  if (isX) { ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + s * .4, oy, x, y + s); ctx.stroke(); }
+  if (bubble) { ctx.beginPath(); ctx.arc(bx + w + r, oy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+  ctx.beginPath();
+  for (const [x0, y0, xe] of ins) { ctx.moveTo(x0, y0); ctx.lineTo(xe, y0); }
+  ctx.moveTo(ox, oy); ctx.lineTo(ox + L, oy); ctx.stroke();
+  if (enable) {
+    const ey = y + s * .25 - (enable === 'not' ? 2 * r : 0);
+    ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex, y - s * .45); ctx.stroke();
+    if (enable === 'not') { ctx.beginPath(); ctx.arc(ex, ey + r, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+  }
+  ctx.restore();
+  return pins;
+}
+
+// Multiplexer symbol: a trapezoid with data inputs on the left (index labels inside, names outside), select on top,
+// output on the right. sel = index of the input currently passed through (drawn as a highlighted path); -1 = none.
+// Returns { ins: [[x, y], ...], sel: [x, y], out: [x, y] } (lead ends).
+export function drawMux(ctx, x, y, w, h, { inputs = ['0', '1'], names = [], sel = -1, selName = 'S', outName = 'Y', alpha = 1,
+                                          color = C.white, hi = C.green, size = 24, lead = 40, fill = 'rgba(14,20,28,.92)' } = {}) {
+  const n = inputs.length, inset = h * .16, ys = inputs.map((_, i) => y + h * (i + .5) / n), oy = y + h / 2;
+  const pins = { ins: ys.map(yy => [x - lead, yy]), sel: [x + w / 2, y + inset / 2 - lead], out: [x + w + lead, oy] };
+  if (alpha <= 0) return pins;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.fillStyle = fill; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + inset); ctx.lineTo(x + w, y + h - inset); ctx.lineTo(x, y + h); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath();
+  ys.forEach(yy => { ctx.moveTo(x - lead, yy); ctx.lineTo(x, yy); });
+  ctx.moveTo(x + w / 2, y + inset / 2); ctx.lineTo(x + w / 2, y + inset / 2 - lead); ctx.moveTo(x + w, oy); ctx.lineTo(x + w + lead, oy); ctx.stroke();
+  if (sel >= 0 && sel < n) { ctx.strokeStyle = hi; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(x - lead, ys[sel]); ctx.lineTo(x + 10, ys[sel]); ctx.lineTo(x + w - 10, oy); ctx.lineTo(x + w + lead, oy); ctx.stroke(); }
+  ctx.restore();
+  inputs.forEach((t, i) => mathText(ctx, String(t), x + 10, ys[i] + size * .35, { size: size * .9, alpha, italic: false, color: i === sel ? hi : C.gray }));
+  names.forEach((t, i) => t !== '' && mathText(ctx, String(t), x - lead - 10, ys[i] + size * .35, { size, alpha, align: 'right', italic: false, color: i === sel ? hi : color }));
+  if (selName) mathText(ctx, selName, x + w / 2 + 10, y + inset / 2 - lead + size * .3, { size, alpha, italic: false, color });
+  if (outName) mathText(ctx, outName, x + w + lead + 10, oy + size * .35, { size, alpha, italic: false, color: sel >= 0 ? hi : color });
+  return pins;
+}
+
+// A labelled block (decoder, full adder, ALU, ...): ins / outs = [{ name, inner }] spread along the left / right edges
+// (name outside, inner = small label inside); top / bottom = [{ name }] along the top / bottom edges.
+// Returns pins { ins, outs, top, bottom } (lead ends).
+export function drawBlock(ctx, x, y, w, h, { title = '', ins = [], outs = [], top = [], bottom = [], alpha = 1, color = C.white,
+                                             fill = 'rgba(14,20,28,.92)', size = 24, lead = 36, hiOuts = [], hi = C.green, titleSize = 28 } = {}) {
+  const along = (k, n, a0, len) => a0 + len * (k + .5) / n;
+  const pins = {
+    ins: ins.map((_, k) => [x - lead, along(k, ins.length, y, h)]), outs: outs.map((_, k) => [x + w + lead, along(k, outs.length, y, h)]),
+    top: top.map((_, k) => [along(k, top.length, x, w), y - lead]), bottom: bottom.map((_, k) => [along(k, bottom.length, x, w), y + h + lead]) };
+  if (alpha <= 0) return pins;
+  rrect(ctx, x, y, w, h, 12, fill, color, 3, alpha);
+  if (title) txt(ctx, title, x + w / 2, y + h / 2 + titleSize * .35, { size: titleSize, weight: 800, align: 'center', color, alpha, maxW: w - 20 });
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath();
+  pins.ins.forEach(([px, py]) => { ctx.moveTo(px, py); ctx.lineTo(x, py); });
+  pins.outs.forEach(([px, py], k) => { if (!hiOuts.includes(k)) { ctx.moveTo(x + w, py); ctx.lineTo(px, py); } });
+  pins.top.forEach(([px, py]) => { ctx.moveTo(px, py); ctx.lineTo(px, y); });
+  pins.bottom.forEach(([px, py]) => { ctx.moveTo(px, y + h); ctx.lineTo(px, py); });
+  ctx.stroke();
+  if (hiOuts.length) { ctx.strokeStyle = hi; ctx.lineWidth = 5; ctx.beginPath(); hiOuts.forEach(k => { const [px, py] = pins.outs[k]; ctx.moveTo(x + w, py); ctx.lineTo(px, py); }); ctx.stroke(); }
+  ctx.restore();
+  ins.forEach((p, k) => { const [px, py] = pins.ins[k];
+    if (p.name) mathText(ctx, p.name, px - 8, py + size * .35, { size, align: 'right', alpha, italic: false, color });
+    if (p.inner) mathText(ctx, p.inner, x + 10, py + size * .3, { size: size * .8, alpha, italic: false, color: C.gray }); });
+  outs.forEach((p, k) => { const [px, py] = pins.outs[k], on = hiOuts.includes(k);
+    if (p.name) mathText(ctx, p.name, px + 8, py + size * .35, { size, alpha, italic: false, color: on ? hi : color });
+    if (p.inner) mathText(ctx, p.inner, x + w - 10, py + size * .3, { size: size * .8, align: 'right', alpha, italic: false, color: on ? hi : C.gray }); });
+  top.forEach((p, k) => { const [px, py] = pins.top[k]; if (p.name) mathText(ctx, p.name, px, py - 8, { size, align: 'center', alpha, italic: false, color }); });
+  bottom.forEach((p, k) => { const [px, py] = pins.bottom[k]; if (p.name) mathText(ctx, p.name, px, py + size + 4, { size, align: 'center', alpha, italic: false, color }); });
+  return pins;
+}
+
+// Polyline wire through points [[x, y], ...]; prog 0..1 draws it progressively; dots = junction dots drawn once complete.
+export function wire(ctx, pts, { color = C.white, lw = 3, alpha = 1, prog = 1, dots = [] } = {}) {
+  if (alpha <= 0 || prog <= 0 || pts.length < 2) return;
+  const seglen = pts.slice(1).map((p, i) => Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1])), total = seglen.reduce((a, b) => a + b, 0);
+  let left = total * clamp(prog);
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = lw; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length && left > 0; i++) {
+    const f = Math.min(1, left / (seglen[i - 1] || 1)); left -= seglen[i - 1];
+    ctx.lineTo(lerp(pts[i - 1][0], pts[i][0], f), lerp(pts[i - 1][1], pts[i][1], f));
+  }
+  ctx.stroke();
+  if (prog >= 1) for (const [dx, dy] of dots) { ctx.beginPath(); ctx.arc(dx, dy, lw * 1.6, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+}
+
+// Truth table drawn at (x, y) (top-left). head: column names (mathText syntax, so '~A' and 'C_{in}' work);
+// rows: arrays of 0/1 (or strings). outs = how many right-hand columns are outputs (a divider goes before them).
+// hi: row indexes to highlight (color hiColor); dim: row indexes drawn faint; reveal 0..1 brings rows in top to bottom.
+// Every digit drawn is an on-screen number: cover 0 and 1 with allow_numbers ("truth-table values").
+// Returns { w, h, rowY(k) } so scenes can point at rows.
+export function truthTable(ctx, { head, rows, x, y, cw = 70, rh = 46, size = 28, outs = 1, hi = [], hiColor = C.green, dim = [], alpha = 1, reveal = 1, colW } = {}) {
+  need(Array.isArray(head) && Array.isArray(rows), 'truthTable needs head and rows');
+  const ws = colW || head.map(() => cw), tw = ws.reduce((a, b) => a + b, 0), xs = ws.map((_, i) => x + ws.slice(0, i).reduce((a, b) => a + b, 0));
+  const rowY = k => y + size + 22 + k * rh, out = { w: tw, h: size + 22 + rows.length * rh, rowY };
+  if (alpha <= 0) return out;
+  head.forEach((h, i) => mathText(ctx, h, xs[i] + ws[i] / 2, y + size, { size, align: 'center', alpha, weight: 800, italic: false, color: i >= head.length - outs ? C.green : C.white }));
+  rrect(ctx, x, y + size + 12, tw, 2.5, 0, 'rgba(255,255,255,.6)', null, 0, alpha);
+  rrect(ctx, xs[head.length - outs] - 2, y + 4, 2.5, size + 18 + rows.length * rh, 0, 'rgba(255,255,255,.6)', null, 0, alpha);
+  rows.forEach((r, k) => {
+    const ra = alpha * eo(seg(reveal, k / rows.length * .8, k / rows.length * .8 + .2)), ry = rowY(k);
+    if (ra <= 0) return;
+    const h = hi.includes(k);
+    if (h) rrect(ctx, x - 8, ry, tw + 16, rh - 4, 8, 'rgba(118,185,0,.18)', hiColor, 2, ra);
+    r.forEach((v, i) => { const o = i >= head.length - outs;
+      txt(ctx, String(v), xs[i] + ws[i] / 2, ry + rh * .5 + size * .34, { size, align: 'center', weight: o ? 800 : 600, color: o && h ? hiColor : C.white, alpha: ra * (dim.includes(k) ? .3 : 1) }); });
+  });
+  return out;
+}
+
+// Step-by-step algebra. steps: [{ expr, why, sentence, at }] (expr in mathText syntax; why = the rule used, drawn in gray
+// on the right; at = [a, b] sub-range of the sentence window, default [0, .25]). Earlier steps stay dimmed, the newest is
+// highlighted. heading on top; label = yellow tag at the top right; box = [x, y, w, h].
+export function derivation({ heading = '', steps, box = [140, 150, 1640, 700], size = 46, lineH, label = '' }) {
+  need(Array.isArray(steps) && steps.length, 'derivation needs steps');
+  const [x, y, w, h] = box, top = y + (heading ? 90 : 30), lh = lineH || Math.min(size * 1.9, (h - (top - y)) / steps.length);
+  return {
+    draw(ctx, S) {
+      const a0 = eo(seg(S.t, .1, .6));
+      if (heading) mathText(ctx, heading, x, y + 48, { size: 34, weight: 800, alpha: a0, italic: false });
+      if (label) tag(ctx, label, x + w, y + 48, a0, { align: 'right', size: 21 });
+      const prog = steps.map((st, i) => S.P(st.sentence ?? i, ...(st.at || [0, .25])));
+      const last = prog.reduce((m, p, i) => (p > 0 ? i : m), -1);
+      steps.forEach((st, i) => {
+        const a = eo(prog[i]);
+        if (a <= 0) return;
+        const yy = top + i * lh + size, cur = i === last;
+        if (cur) rrect(ctx, x - 20, yy - size * 1.1, w + 40, size * 1.55, 12, 'rgba(118,185,0,.10)', null, 0, a);
+        mathText(ctx, st.expr, x + 20 - 30 * (1 - a), yy, { size, alpha: a, color: cur ? C.white : C.gray, italic: false });
+        if (st.why) mathText(ctx, st.why, x + w - 10, yy - size * .22, { size: 24, align: 'right', color: cur ? C.green : C.gray, weight: 700, alpha: a, italic: false });
+      });
+    }
+  };
 }

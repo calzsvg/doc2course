@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Narration + timing for a job.
 
-    ./p2v tts <job> [--engine kokoro|supertonic|silent] [--voice af_heart] [--speed 1.0]
+    ./p2v tts <job> [--engine kokoro|supertonic|silent] [--voice af_heart] [--speed 1.0] [--no-cache]
     python scripts/tts.py --download-models     (used by ./p2v setup)
 
 Reads <jobs>/<job>/script.json and writes
     <jobs>/<job>/build/narration.wav, build/timing.json
+
+Each synthesized sentence is cached in build/tts_cache/ (keyed by engine, voice, speed, language and text), so after
+editing a few sentences of a long script only those are synthesized again. --no-cache ignores the cache.
 
 timing.json drives the video: one entry per scene with sentence start/dur, so scene
 animations can key off sentence boundaries (S.P(k) in scenes.js).
@@ -84,6 +87,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('job')
     ap.add_argument('--engine'); ap.add_argument('--voice'); ap.add_argument('--speed', type=float)
+    ap.add_argument('--no-cache', action='store_true')
     a = ap.parse_args()
     J = os.path.join(JOBS, a.job)
     with open(os.path.join(J, 'script.json'), encoding='utf-8') as f: script = json.load(f)
@@ -99,11 +103,32 @@ def main():
     B = os.path.join(J, 'build'); os.makedirs(B, exist_ok=True)
     for f in ('timing.json', 'narration.wav'):
         if os.path.exists(os.path.join(B, f)): os.remove(os.path.join(B, f))
-    k = load_kokoro() if engine == 'kokoro' else load_supertonic() if engine == 'supertonic' else None
-    if engine == 'supertonic':
+    cache_dir = os.path.join(B, 'tts_cache'); os.makedirs(cache_dir, exist_ok=True)
+    texts = [t for sc in script['scenes'] for _, t in sc['s']]
+    key = lambda text: hashlib.sha1(f'{engine}|{voice}|{speed}|{lang}|{text}'.encode()).hexdigest()
+    cached = lambda text: os.path.join(cache_dir, key(text) + '.npz')
+    need_engine = engine != 'silent' and (a.no_cache or not all(os.path.exists(cached(t)) for t in texts))
+    k = None
+    if need_engine:
+        k = load_kokoro() if engine == 'kokoro' else load_supertonic() if engine == 'supertonic' else None
+    if engine == 'supertonic' and k is not None:
         SR = int(k.sample_rate); style = k.get_voice_style(voice_name=voice)
+    if engine != 'silent' and k is None and texts:        # everything cached: the sample rate comes from the cache
+        SR = int(np.load(cached(texts[0]))['sr'])
+    stats = {'hit': 0, 'new': 0}
 
     def synth(text):
+        if engine == 'silent': return synth_raw(text)
+        f = cached(text)
+        if not a.no_cache and os.path.exists(f):
+            z = np.load(f)
+            if int(z['sr']) == SR:
+                stats['hit'] += 1; return z['pcm']
+        x = synth_raw(text); stats['new'] += 1
+        np.savez(f, pcm=x, sr=np.int32(SR))
+        return x
+
+    def synth_raw(text):
         if engine == 'kokoro':
             s, sr = k.create(text, voice=voice, speed=speed, lang=lang)
             assert sr == SR, sr
@@ -128,7 +153,11 @@ def main():
             x = synth(tts)
             s0 = T - start; add(x)
             sents.append({'start': round(s0, 3), 'dur': round(T - start - s0, 3), 'sub': sub})
-            if kk < len(sc['s']) - 1: silence(0.45)
+            # "pauses": {"0": 4} adds 4 s of silence after sentence 0 (thinking time for a quiz, a pause before a reveal);
+            # the pause belongs to that sentence's window, so S.P(0) spans it
+            extra = float((sc.get('pauses') or {}).get(str(kk), 0))
+            if kk < len(sc['s']) - 1: silence(0.45 + extra)
+            elif extra: silence(extra)
             print(f'  {sc["id"]}.{kk}  {len(x) / SR:5.2f}s', flush=True)
         silence(tail)
         timeline.append({'id': sc['id'], 'start': round(start, 3), 'dur': round(T - start, 3), 'sents': sents})
@@ -137,7 +166,12 @@ def main():
         wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(SR)
         wf.writeframes((audio * 32767).astype('<i2').tobytes())
     with open(os.path.join(B, 'timing.json'), 'w', encoding='utf-8') as f: json.dump(timeline, f, ensure_ascii=False, indent=1)
+    if engine != 'silent': print(f'sentences: {stats["new"]} synthesized, {stats["hit"]} from cache')
     print(f'total {T:.1f}s  engine={engine}' + (f' voice={voice}' if engine != 'silent' else '') + f' lang={slang}  -> {B}/timing.json')
 
 if __name__ == '__main__':
     main()
+    # The Supertonic/onnxruntime worker threads can keep the interpreter from exiting after everything is written
+    # (seen as a process spinning at 100% CPU for minutes). All output is flushed and closed here, so leave now.
+    sys.stdout.flush(); sys.stderr.flush()
+    os._exit(0)

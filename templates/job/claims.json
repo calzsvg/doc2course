@@ -1,10 +1,12 @@
 {
   "paper": "",
   "claims": [
-    { "id": "c01", "kind": "quote", "used_in": ["problem.0"], "text": "what the video says", "quote": "verbatim sentence copied from paper.txt" },
+    { "id": "c01", "kind": "quote", "used_in": ["problem.0"], "text": "what the video says", "quote": "verbatim sentence copied from paper.txt", "page": 3 },
     { "id": "c02", "kind": "table", "used_in": ["results.0"], "text": "X beats Y on Z", "table": "Table 2", "row": "Method name", "values": ["0.09"] },
     { "id": "c03", "kind": "derived", "used_in": ["attention.0"], "text": "≈4.3B pairs", "from": ["c01"], "derivation": "how it was computed", "on_screen_label": "(rough estimate)" },
-    { "id": "c04", "kind": "opinion", "used_in": ["limits.2"], "text": "better suited to offline use", "on_screen_label": "framed as 'think of it as'" }
+    { "id": "c04", "kind": "opinion", "used_in": ["limits.2"], "text": "better suited to offline use", "on_screen_label": "framed as 'think of it as'" },
+    { "id": "c05", "kind": "background", "used_in": ["ch2_concept.1"], "text": "a primary key uniquely identifies a row", "basis": "standard relational-database definition; the lecture uses it without defining it" },
+    { "id": "c06", "kind": "example", "used_in": ["ch2_example.0"], "text": "table with 3 rows joined to 2 rows gives 6 rows in a cross join", "on_screen_label": "example" }
   ],
   "allow_numbers": { "1": "section numbering" }
 }

@@ -103,7 +103,7 @@ export function startServer(port = 8765, { onDone, onListen } = {}) {
   });
   srv.listen(port, '127.0.0.1', () => {
     const p = srv.address().port;
-    console.log(`paper2video server on http://127.0.0.1:${p}  (ffmpeg: ${ffmpeg})`);
+    console.log(`doc2video server on http://127.0.0.1:${p}  (ffmpeg: ${ffmpeg})`);
     onListen && onListen(p);
   });
   return srv;

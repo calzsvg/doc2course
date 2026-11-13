@@ -2,4 +2,6 @@ kokoro-onnx>=0.6
 soundfile
 numpy
 pypdf
+pypdfium2
+pillow
 supertonic

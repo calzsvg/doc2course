@@ -18,6 +18,10 @@ export const rig = () => {               // custom 3D scene
 };
 ```
 
+Long videos: keep one file per chapter (`scenes_intro.js`, `scenes_joins.js`, ...) and re-export them from `scenes.js`
+(`export { ch2, ch2_concept } from './scenes_joins.js';`). A factory may be `async` (needed for `pageImage`):
+`export const slide3 = async () => stack(await pageImage({ page: 3, credit: '...' }), recapList({ ... }));`
+
 ## Timing model
 - `S.t` seconds into the scene, `S.dur` scene length.
 - `S.P(k, a=0, b=1)` progress 0→1 across sentence k's window, optionally a sub-range [a, b].
@@ -35,6 +39,17 @@ export const rig = () => {               // custom 3D scene
   `uMax` caps on-screen size), `turbo` (depth colormap), `project` (3D → screen for labels).
 - 2D: `txt`, `chip`, `panel`, `rrect`, `arrow`, `drawMini` (camera thumbnail tile).
 - Templates (templates.js): `titleCard`, `bulletCards`, `barCompare`, `lineChart`, `flow`, `endCard` (long titles shrink to fit), `stack`.
+- Lecture / long-form templates (see `references/long-form.md`):
+  `chapterCard({ chapters, current, kicker, title, sub })` (chapter opener + agenda),
+  `definitionCard({ term, gloss, def, example, exampleLabel, pitfall, pitfallLabel, at })` (each part on its own sentence),
+  `quizCard({ question, choices, answer, explain, ask, reveal, label })` (with `"pauses": { "<ask>": 4 }` in script.json
+  a countdown ring runs during the thinking pause), `codeBlock({ title, code, steps: [{ sentence, lines: [a, b], note }], size, label })`
+  (monospace, highlighted line ranges, no line numbers), `recapList({ heading, items })` (checks off per sentence),
+  `pageImage({ page, credit, box, marks, sentence })` (async; a page image from `paper/pages/`, only when figure reuse is allowed).
+- Chapters: `"chapter": "Title"` on a scene in script.json starts a chapter: ticks on the progress bar, the chapter name
+  at the top right after the chapter's first scene (`style.chapterHeading: false` hides it), MP4 chapter markers and
+  `build/chapters.txt`. Keep digits out of chapter titles (or cover them in allow_numbers). Leave the top-right corner
+  (y < 70) free in long videos.
 - Labels and series framing: `tag(ctx, s, x, y, a, 'right')` (opaque yellow label for illustration / opinion / series framing),
   `seriesStrip(ctx, items, { current, linked, litPrev, reveal, note })` (where this video sits in a lecture series; wraps into rows).
 - Robot learning (2D): `binStrip` (an action value cut into bins, the chosen bin in yellow), `chunkBars` (an action chunk as bars,
@@ -60,3 +75,5 @@ export const rig = () => {               // custom 3D scene
 - Long English labels overflow cards: keep chip text under ~45 characters, use `maxW`.
 - Viewers need a location cue before a mechanism (where on the car / which part of the pipeline).
 - Keep the subtitle band (bottom ~170 px) clear of content.
+- Korean text wraps on spaces in `wrapText`; keep long Korean phrases spaced, or the line runs past `maxW`.
+- Code with numbers: every digit drawn counts as an on-screen number (quote the code line with `page`, or allow_numbers).

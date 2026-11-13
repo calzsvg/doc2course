@@ -3,11 +3,16 @@
 
     python3 scripts/check_claims.py <job>
 
-Checks jobs/<job>/claims.json against paper/paper.txt and the script/scenes:
-  * kind=quote   the quote appears verbatim (whitespace/hyphenation-insensitive) in the paper text
-  * kind=table   a table line contains the row label and every listed value; the table caption exists
-  * kind=derived needs `from` (existing claim ids), `derivation`, and `on_screen_label`
-  * kind=opinion needs `on_screen_label` (how the video marks it as interpretation)
+Checks jobs/<job>/claims.json against the source text (paper/paper.txt, plus paper/transcribed.txt for pages without
+a text layer) and the script/scenes:
+  * kind=quote      the quote appears verbatim (whitespace/hyphenation-insensitive) in the source text; with `page: N`
+                    only on that page. Found only in transcribed.txt -> REVIEW (verifier compares with the page image)
+  * kind=table      a table line contains the row label and every listed value; the table caption exists
+  * kind=derived    needs `from` (existing claim ids), `derivation`, and `on_screen_label`
+  * kind=opinion    needs `on_screen_label` (how the video marks it as interpretation)
+  * kind=background needs `basis` (why this is standard knowledge, e.g. "definition in any DB textbook"): context the
+                    narration adds beyond the document (lectures need it). Always REVIEW
+  * kind=example    needs `on_screen_label` ("example", "예시"): invented values in a worked example. Always REVIEW
   * coverage     every number in subtitles, narration text, string literals in the job's .js files, and
                  build/onscreen.json (every string the player actually drew; written by `p2v preview`
                  and `p2v render`) is covered by some claim (values / quote / text) or by `allow_numbers`
@@ -35,6 +40,8 @@ def nums(s):
     for m in NUM.finditer(s):
         if re.match(r'-?D(?![A-Za-z])', s[m.end():]) and not m.group(3): continue   # "3D", "4D", "1-D": names, not data
         sign, v, ex = m.group(1), m.group(2), m.group(3) or ''
+        if not re.fullmatch(r'\d{1,3}(,\d{3})+', v) and v.count(',') >= 2 and '.' not in v:   # "3,4,5,6,7": a list (minterm indices)
+            out += [x for x in v.split(',')]; continue
         v = v.replace(',', '') if re.fullmatch(r'\d{1,3}(,\d{3})+', v) else v
         ex = ex.replace('{', '').replace('}', '').replace('E', 'e')
         v = v.rstrip('.')
@@ -115,8 +122,18 @@ def main():
     if len(sys.argv) < 2: sys.exit(__doc__)
     job = sys.argv[1]; J = os.path.join(JOBS, job)
     paper_raw = open(os.path.join(J, 'paper', 'paper.txt'), encoding='utf-8').read()
-    paper = norm(paper_raw)
+    tpath = os.path.join(J, 'paper', 'transcribed.txt')
+    trans_raw = open(tpath, encoding='utf-8').read() if os.path.exists(tpath) else ''
+    paper, trans = norm(paper_raw), norm(trans_raw)
     lines = [norm(l) for l in paper_raw.splitlines()]
+    n_paper_lines = len(lines)
+    lines += [norm(l) for l in trans_raw.splitlines()]          # lines[n_paper_lines:] come from the transcription
+    def by_page(raw):
+        out = {}
+        for m in re.finditer(r'=== page (\d+) ===(.*?)(?==== page \d+ ===|\Z)', raw, re.S):
+            out[int(m.group(1))] = out.get(int(m.group(1)), '') + ' ' + norm(m.group(2))
+        return out
+    pages, tpages = by_page(paper_raw), by_page(trans_raw)
     C = json.load(open(os.path.join(J, 'claims.json'), encoding='utf-8'))
     script = json.load(open(os.path.join(J, 'script.json'), encoding='utf-8'))
     claims = C.get('claims', [])
@@ -135,14 +152,20 @@ def main():
         if k == 'quote':
             q = norm(c.get('quote', ''))
             if len(q) < 8: rows.append(('FAIL', cid, 'quote missing or too short to verify')); continue
-            ok = q in paper
-            rows.append(('PASS' if ok else 'FAIL', cid, 'quote found' if ok else f'quote NOT found: "{c.get("quote", "")[:90]}"'))
+            pg = c.get('page')
+            if pg is not None and not str(pg).isdigit():
+                rows.append(('FAIL', cid, f'page must be a page number, got {pg!r}')); continue
+            src, tsrc = (pages.get(int(pg), ''), tpages.get(int(pg), '')) if pg is not None else (paper, trans)
+            where = f' on page {pg}' if pg is not None else ''
+            if q in src: rows.append(('PASS', cid, 'quote found' + where))
+            elif q in tsrc: rows.append(('REVIEW', cid, f'quote found only in transcribed.txt{where}: compare with the page image'))
+            else: rows.append(('FAIL', cid, f'quote NOT found{where}: "{c.get("quote", "")[:90]}"'))
         elif k == 'table':
             cap = norm(c.get('table', ''))
             # "Table 2:" (most styles), "Table 2." (CVPR), a glyph separator ("Table 2 ⋃︀ ...", some LaTeX classes)
             # or "Table 2 Results ..." at a line start (no separator)
             is_cap = lambda l: re.match(re.escape(cap) + CAPSEP, l) or re.match(re.escape(cap) + r' [a-z]', l)
-            if not re.search(re.escape(cap) + CAPSEP, paper) and not any(is_cap(l) for l in lines):
+            if not re.search(re.escape(cap) + CAPSEP, paper + ' ' + trans) and not any(is_cap(l) for l in lines):
                 rows.append(('FAIL', cid, f'caption "{c.get("table")}" not found')); continue
             row, vals = norm(c.get('row', '')), [norm(str(v)) for v in c.get('values', [])]
             if not row or not vals or not cap:
@@ -157,11 +180,13 @@ def main():
             for c0 in capl:
                 lo = max([i for i in bounds if i < c0], default=-1) + 1
                 hi = min([i for i in bounds if i > c0], default=len(lines))
-                scopes.append(lines[lo:hi])
-            scope = [l for sc in scopes for l in sc] if scopes else lines
+                scopes.append(range(lo, hi))
+            scope = [i for sc in scopes for i in sc] if scopes else range(len(lines))
             # a value must stand alone: "60" must not match inside "60.9" or "160"
-            hit = [l for l in scope if row in l and all(re.search(r'(?<![\d.])' + re.escape(v) + r'(?![\d]|\.\d)', l) for v in vals)]
-            rows.append(('PASS' if hit else 'FAIL', cid, f'{c.get("table")} row "{c.get("row")}" = {c.get("values")}' + ('' if hit else '  NOT matched on one line')))
+            hit = [i for i in scope if row in lines[i] and all(re.search(r'(?<![\d.])' + re.escape(v) + r'(?![\d]|\.\d)', lines[i]) for v in vals)]
+            st = 'FAIL' if not hit else 'PASS' if any(i < n_paper_lines for i in hit) else 'REVIEW'
+            rows.append((st, cid, f'{c.get("table")} row "{c.get("row")}" = {c.get("values")}' + ('' if hit else '  NOT matched on one line')
+                         + ('  (only in transcribed.txt: compare with the page image)' if st == 'REVIEW' else '')))
         elif k == 'derived':
             miss = [f for f in ('from', 'derivation', 'on_screen_label') if not c.get(f)]
             unk = [f for f in c.get('from', []) if f not in ids]
@@ -169,6 +194,10 @@ def main():
             rows.append((st, cid, f'derived: {c.get("derivation", "")[:80]}' + (f'  missing {miss}' if miss else '') + (f'  unknown ids {unk}' if unk else '')))
         elif k == 'opinion':
             rows.append(('REVIEW' if c.get('on_screen_label') else 'WARN', cid, 'opinion' + ('' if c.get('on_screen_label') else ': not labeled on screen')))
+        elif k == 'background':
+            rows.append(('REVIEW' if c.get('basis') else 'WARN', cid, 'background: ' + (c.get('basis', '')[:80] or 'missing `basis` (why this is standard knowledge)')))
+        elif k == 'example':
+            rows.append(('REVIEW' if c.get('on_screen_label') else 'WARN', cid, 'worked example' + ('' if c.get('on_screen_label') else ': not labeled on screen as an example')))
         else:
             rows.append(('FAIL', cid, f'unknown kind {k}'))
     # coverage

@@ -2,6 +2,7 @@
 // Render a job to MP4, or make preview contact sheets.
 //   ./p2v render <job>     (= node scripts/render.mjs <job>)            full render (frames -> mp4) via headless Chromium (Playwright)
 //   node scripts/render.mjs <job> --preview  contact sheets at every sentence midpoint -> build/preview_*.jpg
+//        --scenes a,b,c   only these scenes (long videos: preview one chapter at a time; sheets are named preview_<first scene>_NN.jpg)
 //   node scripts/render.mjs <job> --manual   start server and print a capture URL to open in any browser
 // Options (or env): --workers N (P2V_WORKERS; default: auto), --gpu auto|cpu|metal|vulkan|egl (P2V_GPU),
 //   --gpu-device <n|/dev/dri/renderD129|pci|vid:did> (P2V_GPU_DEVICE, Linux). Device list: ./p2v gpus
@@ -24,6 +25,7 @@ const port = parseInt(process.env.PORT || '0', 10);  // 0 = any free port
 const opt = (name, env) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : process.env[env]; };
 const WORKERS_OPT = opt('--workers', 'P2V_WORKERS') || 'auto';
 const GPU_MODE = opt('--gpu', 'P2V_GPU') || 'auto', GPU_DEVICE = opt('--gpu-device', 'P2V_GPU_DEVICE') || '';
+const SCENES = (opt('--scenes', 'P2V_SCENES') || '').split(',').map(x => x.trim()).filter(Boolean);
 const Q = parseFloat(opt('--quality', 'P2V_JPEG_Q') || '0.9');
 if (!job) { console.error('usage: node scripts/render.mjs <job> [--preview|--manual]'); process.exit(2); }
 if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(job)) { console.error(`not a job id: ${job}`); process.exit(2); }
@@ -91,11 +93,17 @@ try {
 console.log(`gpu: ${launch.mode}${launch.device ? ' ' + launch.device.node : ''}  (${renderer})`);
 
 if (preview) {
-  const T = await page.evaluate(() => window.TIMING.flatMap(s => s.sents.map(x => s.start + x.start + x.dur * 0.75)));
+  const known = await page.evaluate(() => window.TIMING.map(s => s.id));
+  const unknown = SCENES.filter(id => !known.includes(id));
+  if (unknown.length) bail(`--scenes: no such scene(s) ${unknown.join(', ')}`, 2);
+  const T = await page.evaluate(ids => window.TIMING.filter(s => !ids.length || ids.includes(s.id))
+    .flatMap(s => s.sents.map(x => s.start + x.start + x.dur * 0.75)), SCENES);
   fs.mkdirSync(B, { recursive: true });
+  const prefix = SCENES.length ? `preview_${SCENES[0]}_` : 'preview_';
+  if (!SCENES.length) for (const f of fs.readdirSync(B)) if (/^preview_.*\.jpg$/.test(f)) fs.rmSync(path.join(B, f));
   for (let i = 0; i < T.length; i += 8) {
     const data = await page.evaluate(ts => window.sheet(ts, 2, 960), T.slice(i, i + 8));
-    const f = path.join(B, `preview_${String(i / 8 + 1).padStart(2, '0')}.jpg`);
+    const f = path.join(B, `${prefix}${String(i / 8 + 1).padStart(2, '0')}.jpg`);
     fs.writeFileSync(f, Buffer.from(data.split(',')[1], 'base64'));
     console.log('wrote', f);
   }

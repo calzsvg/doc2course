@@ -1,10 +1,10 @@
 {
- "arxiv": "",
+ "source": "",
  "title": "",
  "lang": "en",
  "tts": {},
  "style": { "subtitleSize": 40 },
  "scenes": [
-  { "id": "title", "label": "", "s": [["Subtitle text shown on screen.", "Text sent to TTS (spell out acronyms; numbers as digits or words both work and are checked)."]] }
+  { "id": "title", "label": "", "chapter": "Introduction", "s": [["Subtitle text shown on screen.", "Text sent to TTS (spell out acronyms; numbers as digits or words both work and are checked)."]] }
  ]
 }

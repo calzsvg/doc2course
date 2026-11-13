@@ -1,93 +1,101 @@
-# paper2video
+# doc2video
 
-A Claude Code plugin (one skill, `/paper2video`): arXiv paper in, narrated and fact-checked explainer video out.
+A skill for **Claude Code and Codex**: turn a document into a narrated, fact-checked explainer video.
+It takes an arXiv paper, **lecture slides**, a handout, or any other PDF, and makes anything from a 5-minute teaser to a
+30-minute chaptered lecture video.
+
+Forked from [SunandBean/paper2video](https://github.com/SunandBean/paper2video), which takes arXiv papers and makes 4-5 minute videos.
 
 ```
-/paper2video https://arxiv.org/abs/2610.30340
+/doc2video ~/Downloads/week8-lab.pdf                    # Claude Code: lecture slides → lecture-mode video (chapters, examples, quizzes)
+$doc2video ~/Downloads/week8-lab.pdf 한국어              # Codex
+/doc2video https://arxiv.org/abs/2610.30340             # a paper → 10-15 min walk-through (standard mode)
+/doc2video 2610.30340 short                             # the original 4-5 min teaser
 ```
 
-![paper2video demo: depth to 3D points, query-based detection, BEV occupancy](docs/demo.gif)
+![demo: depth to 3D points, query-based detection, BEV occupancy](docs/demo.gif)
 
-*Clips from the bundled example: a 4.5-minute explainer of NVIDIA's [Foundation4D](https://arxiv.org/abs/2610.30340) (CC BY 4.0), made end to end by this skill.
-All visuals are generated; every on-screen number traces back to a quote or table row in the paper.*
+*Clips from the bundled example (made by paper2video in `short` mode): an explainer of NVIDIA's
+[Foundation4D](https://arxiv.org/abs/2610.30340) (CC BY 4.0). All visuals are generated; every on-screen number traces back to the paper.*
 
-<details>
-<summary>All 14 scenes (contact sheet)</summary>
+## What changed from paper2video
 
-![Foundation4D explainer contact sheet](docs/example-contact.jpg)
-
-</details>
-
-- **Scenes:** Three.js (3D) + canvas (2D), timed to the narration; reusable templates plus custom scenes per paper
-- **Narration:** English by default (Kokoro, local, Apache-2.0); Korean and 30 other languages with `ko`, `ja`, ... (Supertonic 3, local, OpenRAIL-M). No API keys
-- **Cross-check:** every number and claim is tied to a quote or table row in the paper and checked mechanically against the paper text and against every string the renderer actually drew (`scripts/check_claims.py`), then by an independent verifier subagent (`references/verification.md`)
-- **Output:** 1080p30 MP4, contact sheet, verification report. It never uploads or posts anything.
+| | paper2video | doc2video |
+|---|---|---|
+| Input | arXiv link | arXiv link, **local PDF** (slides, handouts, notes, reports), PDF link. Detects slides vs. papers, renders page images so the agent can read diagrams and screenshots, and lets the agent transcribe pages that have no text layer |
+| Length | 4-5 min | `short` 4-6 min · `standard` 10-15 min (papers) · `lecture` about 1-1.5 min per content slide (slides) · `deep` 20-40 min |
+| Structure | 10-14 scenes | chapters (progress-bar ticks, heading, MP4 chapter markers, `chapters.txt`); teaching pattern per chapter: concept → worked example → common mistake → quiz with thinking pause → summary |
+| Templates | paper / results / 3D | plus `chapterCard`, `definitionCard`, `quizCard`, `codeBlock`, `recapList`, `pageImage` |
+| Claims | quote, table, derived, opinion | plus `background` (standard knowledge a lecture assumes) and `example` (worked examples); quotes can be pinned to a `page`; transcribed pages are checked against the page image |
+| Agents | Claude Code | Claude Code and Codex (`p2v verify` / `p2v run --agent codex` for agents without subagents) |
+| Long runs | | TTS sentence cache (edit one chapter, re-synthesize one chapter), per-chapter preview and verification |
 
 ## Install
 
-I tried several models while building it, but I wasn't happy with most of the results, so I only run it with Claude Opus 5.5 at medium effort.
-
-Requires Claude Code, git, Node 18+, Python 3.10-3.13 and about 1 GB of disk (Option B also uses curl). macOS or Linux; Korean videos on Linux need Noto Sans CJK.
-
-**Option A: plugin (recommended).** In any Claude Code session:
-
-```
-/plugin marketplace add SunandBean/paper2video
-/plugin install paper2video@sunandbean
-```
-
-That's it. The first `/paper2video` run installs the tools (Node packages, ffmpeg, headless Chromium, Python venv, voice model; a few minutes, once).
-Updates: `/plugin marketplace update sunandbean`, or turn on auto-update for the marketplace in `/plugin` → Marketplaces.
-
-**Option B: one-line script.** In a terminal:
+Requires git, Node 18+, Python 3.10-3.13 and about 1 GB of disk. macOS or Linux; Korean videos on Linux need Noto Sans CJK.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SunandBean/paper2video/main/install.sh | bash
+# Claude Code (~/.claude/skills/doc2video)
+curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2video/main/install.sh | bash
+# Codex (${CODEX_HOME:-~/.codex}/skills/doc2video)
+curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2video/main/install.sh | bash -s -- --codex
+# both, with the clone on another disk (the agent folders get symlinks; tools, caches, jobs and videos stay on that disk)
+curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2video/main/install.sh | P2V_DIR=/Volumes/External/doc2video bash -s -- --both
 ```
 
-This clones into `~/.claude/skills/paper2video` and installs the tools right away. Run the same line again to update.
+Claude Code plugin route: `/plugin marketplace add calzsvg/doc2video`, then `/plugin install doc2video@calzsvg`.
 
-Either way, your jobs and finished videos live in `~/paper2video/` and survive updates. The tools live separately
-(plugin data folder for A, `.tools/` inside the clone for B), so updating never re-downloads the 1 GB toolchain.
+Where finished videos go: a video made from a **local PDF is saved next to that PDF** (`~/lectures/week8.pdf` →
+`~/lectures/week8 - <video title>.mp4`, plus `.chapters.txt` for long videos). Videos of arXiv papers and PDF links go to the
+videos folder. Set `P2V_OUT` to send every video to one folder, or `P2V_NEXT_TO_SOURCE=0` to turn the next-to-PDF rule off.
+
+Where everything else goes: tools and caches (Node packages, headless Chromium, Python venv, voice models) in the tools folder;
+jobs (and videos not made from a local PDF) in `~/doc2video/` for installed copies, or inside the clone when the skill folder is a symlink
+to a clone elsewhere or a development checkout. Override with `P2V_HOME` (jobs and videos), `P2V_OUT`, `P2V_JOBS`, `P2V_TOOLS`.
+`p2v doctor` prints every folder.
+
+### Codex notes
+- Invoke with `$doc2video <source> [overrides]` (or describe the task; Codex picks the skill from its description).
+- Codex's default sandbox has no network. Run `p2v setup` once outside it (the installer does), and approve the fetch
+  step when the source is a link. Korean narration downloads the Supertonic model on first use: run `p2v smoke --ko`
+  once outside the sandbox.
+- Codex may not have subagents, so independent verification runs as a separate process: `p2v verify <job>`
+  (uses `claude` or `codex`, whichever is installed; `--agent` picks one; it needs network approval).
+- Unattended: `p2v run --agent codex <source> [overrides]` fetches first, then runs `codex exec`
+  (`P2V_CODEX_ARGS` overrides the default `--full-auto --skip-git-repo-check`).
 
 ## Use
 
-In any Claude Code session:
-
 ```
-/paper2video <arxiv link or id> [overrides]
-/paper2video 2610.35607 3 min, voice am_michael
-/paper2video 2610.35607 한국어
+/doc2video <arxiv link | file.pdf | pdf link> [overrides]
+/doc2video ~/lectures/db-week8.pdf deep, Korean
+/doc2video ~/lectures/db-week8.pdf my own slides        # allows showing slide images (credited)
+/doc2video 2610.35607 12 min, voice am_michael
 ```
-
-The skill only runs when you call it (`disable-model-invocation: true`); pasting a paper link in a normal chat does nothing special.
-
-Finished videos appear in `~/paper2video/videos/` with readable names (e.g. `2610.30340_Foundation4D.mp4`); working files stay in `~/paper2video/jobs/<id>/`.
-Override with `P2V_HOME` (both), `P2V_OUT` (videos) or `P2V_JOBS` (jobs).
 
 Everything the skill does is also a terminal command, `p2v` in the skill folder:
 
 ```bash
-p2v doctor                 # folders and what is installed
-p2v smoke [--ko]           # toolchain test, should end with ALL PASS
-p2v test                   # fast regression tests for the checker and the local server
-p2v run <arxiv link>       # unattended run through `claude -p` (for cron or another bot)
-p2v render <job> [--workers N] [--gpu auto|cpu]   # GPU (Metal on macOS, Vulkan on Linux) and parallel pages by default
-p2v gpus                   # Linux: list GPUs; pick one with --gpu-device <n> (or P2V_GPU_DEVICE)
-p2v help                   # fetch, check, tts, preview, render, collect, setup
+p2v doctor                                  # folders and what is installed
+p2v fetch ~/Downloads/lecture.pdf           # local PDF → job (prints the job id, document type, pages without text)
+p2v preview <job> --scenes ch2,ch2_example  # preview one chapter
+p2v verify <job> [--agent claude|codex]     # fresh-context verifier → VERIFY.md
+p2v render <job> [--workers N] [--gpu auto|cpu]
+p2v run [--agent claude|codex] <source>     # unattended run
+p2v smoke [--ko] · p2v test · p2v help
 ```
 
 ## What's inside
 
-- `SKILL.md` workflow and defaults the agent follows
-- `engine/` timeline player, 3D/2D primitives, templates
-- `p2v` single command for every step; `scripts/` fetch (with license detection), TTS, claims check, render/mux
-- `.claude-plugin/` plugin and marketplace manifests; `install.sh` for the git-clone route
-- `references/` verification layers, scene authoring, licensing
-- `local/` optional, git-ignored: put your own extra steps here (e.g. a publishing checklist); the skill runs them after its final report
+- `SKILL.md` workflow and defaults the agent follows (agent-neutral)
+- `engine/` timeline player (chapters), 3D/2D primitives, templates (papers and lectures)
+- `p2v` single command for every step; `scripts/` fetch (arXiv / local / link, page images), TTS (cached), claims check, render/mux (chapters)
+- `references/` verification layers, scene authoring, long-form teaching, licensing
+- `.claude-plugin/` plugin manifests; `install.sh` for Claude Code and Codex; `AGENTS.md` for agents working on this repo
+- `local/` optional, git-ignored: your own extra steps (e.g. a publishing checklist); the skill runs them after its final report
 - `jobs/2610.30340/` worked example (Foundation4D, NVIDIA, CC BY 4.0), `jobs/_smoke/`, `jobs/_smoke_ko/` toolchain tests
 
-License: MIT (see LICENSE). The example job includes text from the Foundation4D paper (arXiv 2610.30340, NVIDIA, CC BY 4.0).
+License: MIT (see LICENSE), based on paper2video by Sunbin Kim. The example job includes text from the Foundation4D paper (arXiv 2610.30340, NVIDIA, CC BY 4.0).
 
-Third-party: three.js (MIT), ffmpeg-static (downloads a GPL-3.0 FFmpeg build at install), kokoro-onnx (MIT) and Kokoro-82M weights (Apache-2.0), supertonic (MIT code, Supertonic 3 weights under OpenRAIL-M), Playwright (Apache-2.0).
-Korean subtitles need a Korean font (built into macOS; on Linux install Noto Sans CJK).
+Third-party: three.js (MIT), ffmpeg-static (downloads a GPL-3.0 FFmpeg build at install), kokoro-onnx (MIT) and Kokoro-82M weights (Apache-2.0),
+supertonic (MIT code, Supertonic 3 weights under OpenRAIL-M), Playwright (Apache-2.0), pypdf (BSD), pypdfium2 (Apache-2.0 / BSD; PDFium BSD-3), Pillow (MIT-CMU).

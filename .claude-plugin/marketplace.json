@@ -1,12 +1,12 @@
 {
-  "name": "sunandbean",
-  "description": "Claude Code plugins by Sunbin Kim",
-  "owner": { "name": "Sunbin Kim", "url": "https://github.com/SunandBean" },
+  "name": "calzsvg",
+  "description": "doc2video: documents in, explainer videos out (fork of SunandBean/paper2video)",
+  "owner": { "name": "calzsvg", "url": "https://github.com/calzsvg" },
   "plugins": [
     {
-      "name": "paper2video",
+      "name": "doc2video",
       "source": "./",
-      "description": "arXiv paper in, narrated and fact-checked explainer video out"
+      "description": "Paper, lecture slides or any PDF in; narrated, fact-checked explainer video out"
     }
   ]
 }

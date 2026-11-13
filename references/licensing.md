@@ -13,6 +13,13 @@ Explaining in your own words with your own visuals is the default.
 
 The license shows under "Download" on the abs page; `fetch_paper.py` records it in `meta.json`.
 
+Local files and PDF links (lecture slides, handouts): `meta.json.figure_reuse` starts as `unknown`. Draw your own visuals.
+If the user says the material is theirs or that they may reuse it, re-run `p2v fetch <file> --figures own` and then
+page images (`pageImage`) may appear, credited on screen. Lecture slides often contain third-party figures
+(textbook images, screenshots of products, logos): even with `--figures own`, avoid pages that are mostly someone
+else's figure or logo. A video made from someone else's course material is for personal study unless the
+lecturer allows more; say so in the report.
+
 Also check:
 - Dataset imagery inside figures (Waymo Open, nuScenes, ...) has its own terms that the paper's CC license may not cover. Avoid.
 - Company names in narration are fine; logos and liveries are not.

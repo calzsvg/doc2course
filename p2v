@@ -1,29 +1,41 @@
 #!/usr/bin/env bash
-# paper2video command line. One entry point for every step; works from any directory.
+# doc2video command line (forked from paper2video). One entry point for every step; works from any directory.
 #
 #   p2v setup                 install tools (Node packages, ffmpeg, headless Chromium, Python venv, voice model)
 #   p2v doctor                show folders and what is installed
-#   p2v fetch <arxiv link|id> download paper + license, create the job folder
+#   p2v fetch <source> [--job ID] [--type slides|paper|document] [--figures own|unknown]
+#                             source = arXiv link/id, a local PDF (lecture slides, handouts, papers) or a PDF link
 #   p2v check <job>           mechanical claims check (must end FAIL 0, WARN 0)
-#   p2v tts <job> [opts]      narration + timing (opts: --engine, --voice, --speed)
-#   p2v preview <job>         contact sheets at every sentence midpoint
+#   p2v tts <job> [opts]      narration + timing (opts: --engine, --voice, --speed, --no-cache)
+#   p2v preview <job> [--scenes a,b]   contact sheets at every sentence midpoint (optionally only some scenes)
 #   p2v render <job> [--manual|--allow-stale] [--workers N] [--gpu auto|cpu|metal|vulkan|egl] [--gpu-device D]
+#   p2v verify <job> [--agent claude|codex] [--scenes a,b]   independent verifier in a fresh agent process -> VERIFY*.md
 #   p2v gpus                  GPUs the renderer can use (pick one with --gpu-device or P2V_GPU_DEVICE)
 #   p2v collect               re-link every finished video into the videos folder
 #   p2v smoke [--ko]          end-to-end toolchain test
 #   p2v test                  fast regression tests (no tools or network needed)
-#   p2v run <link> [overrides]  unattended run through `claude -p` (log in <work>/logs/)
+#   p2v run [--agent claude|codex] <source> [overrides]   unattended run (log in <work>/logs/)
 #   p2v paths                 print the resolved folders as export lines
 #
 # Folders (details in scripts/p2v_paths.py): code stays in the skill folder, tools in P2V_TOOLS,
-# jobs and videos in P2V_HOME (~/paper2video for installed copies). All four can be overridden by env vars.
+# jobs and videos in P2V_HOME (~/doc2video for installed copies). All four can be overridden by env vars.
+# Agents: P2V_AGENT (claude|codex) picks the CLI for verify/run; P2V_CODEX_ARGS overrides the codex exec flags
+# (default: --full-auto --skip-git-repo-check).
 set -euo pipefail
 # Logical path (symlinked skill folders keep their ~/.claude/skills/... spelling, which is what permission rules see).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SYSPY="$(command -v python3 || true)"
 [ -n "$SYSPY" ] || { echo "p2v: python3 not found (need Python 3.10-3.13)"; exit 1; }
+# Remember whether the user chose the videos folder themselves: an explicit P2V_OUT beats "next to the source PDF".
+export P2V_OUT_EXPLICIT="${P2V_OUT:+1}"
 eval "$("$SYSPY" "$ROOT/scripts/p2v_paths.py" --shell)"
 PY="$P2V_TOOLS/.venv/bin/python"
+# Keep every download next to the tools (not in ~/Library/Caches or ~/.cache), so the whole install lives on one disk:
+# headless Chromium, the Supertonic model (Hugging Face cache), and the npm/pip download caches.
+export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$P2V_TOOLS/ms-playwright}"
+export HF_HOME="${HF_HOME:-$P2V_TOOLS/huggingface}"
+export npm_config_cache="${npm_config_cache:-$P2V_TOOLS/.npm-cache}"
+export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$P2V_TOOLS/.pip-cache}"
 
 need_tools() {
   [ -x "$PY" ] && [ -d "$P2V_TOOLS/node_modules/three" ] && return 0
@@ -33,7 +45,7 @@ need_job() {
   [ -n "${1:-}" ] || { echo "usage: p2v $CMD <job>"; exit 2; }
   [[ "$1" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || { echo "p2v: '$1' is not a job id (letters, digits, . _ - only)"; exit 2; }
   seed_job "$1"
-  [ -d "$P2V_JOBS/$1" ] || { echo "p2v: no job '$1' in $P2V_JOBS (run: p2v fetch <arxiv link> first)"; exit 2; }
+  [ -d "$P2V_JOBS/$1" ] || { echo "p2v: no job '$1' in $P2V_JOBS (run: p2v fetch <arxiv link | file.pdf> first)"; exit 2; }
 }
 # Bundled example jobs (2610.30340, _smoke, _smoke_ko) ship inside the skill folder.
 # Copy one into the work dir the first time it is used, so builds never write into the skill folder.
@@ -83,7 +95,7 @@ setup() {
   [ -x "$T/node_modules/ffmpeg-static/ffmpeg" ] || (cd "$T" && node node_modules/ffmpeg-static/install.js)
   unquarantine "$T/node_modules"
   (cd "$T" && npx --yes playwright install chromium) || echo "!! Chromium install failed: render with 'p2v render <job> --manual' in any browser"
-  unquarantine "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/Library/Caches/ms-playwright}"
+  unquarantine "$PLAYWRIGHT_BROWSERS_PATH"
   echo "== python venv"
   local P; P=$(pick_python) || { echo "!! Need Python 3.10-3.13 (brew install python@3.12, or set PYTHON=/path/to/python3.12)"; exit 1; }
   echo "using $P ($("$P" -V))"
@@ -108,8 +120,9 @@ doctor() {
   echo "tools   $P2V_TOOLS"
   echo "jobs    $P2V_JOBS"
   echo "videos  $P2V_OUT"
+  echo "caches  $PLAYWRIGHT_BROWSERS_PATH, $HF_HOME"
   local ok=1
-  if [ -x "$PY" ] && "$PY" -c "import kokoro_onnx, soundfile, pypdf, supertonic" 2>/dev/null; then echo "python  ok ($("$PY" -V))"; else echo "python  missing"; ok=0; fi
+  if [ -x "$PY" ] && "$PY" -c "import kokoro_onnx, soundfile, pypdf, pypdfium2, PIL, supertonic" 2>/dev/null; then echo "python  ok ($("$PY" -V))"; else echo "python  missing (or outdated: run setup again)"; ok=0; fi
   if [ -s "$P2V_TOOLS/models/kokoro-v1.0.onnx" ]; then echo "voice   ok"; else echo "voice   missing"; ok=0; fi
   command -v node >/dev/null || { echo "node    missing (install Node 18+)"; return 1; }
   local ff
@@ -119,6 +132,7 @@ doctor() {
     echo "ffmpeg  missing"; ok=0
   fi
   [ -d "$P2V_TOOLS/node_modules/playwright" ] && echo "render  ok (playwright)" || echo "render  manual only (no playwright)"
+  local a; for a in claude codex; do command -v "$a" >/dev/null && echo "agent   $a ($(command -v "$a"))"; done
   [ $ok = 1 ] || { echo "-> run: $ROOT/p2v setup"; return 1; }
 }
 
@@ -136,17 +150,73 @@ smoke() {
   echo "ALL PASS -> $P2V_JOBS/_smoke/build/_smoke.mp4"
 }
 
-run_unattended() {
-  [ $# -ge 1 ] || { echo "usage: p2v run <arxiv link or id> [overrides]"; exit 2; }
+pick_agent() {   # --agent X, else $P2V_AGENT, else whichever CLI exists (claude first)
+  local a="${P2V_AGENT:-}"
+  if [ -z "$a" ]; then for a in claude codex; do command -v "$a" >/dev/null && break; a=""; done; fi
+  [ -n "$a" ] || { echo "p2v: neither claude nor codex is on PATH (or set P2V_AGENT)" >&2; return 1; }
+  case "$a" in claude|codex) ;; *) echo "p2v: unknown agent '$a' (claude or codex)" >&2; return 1 ;; esac
+  command -v "$a" >/dev/null || { echo "p2v: '$a' CLI not found on PATH" >&2; return 1; }
+  echo "$a"
+}
+
+# Run a prompt in a fresh agent process (no shared context with the caller). $1 agent, $2 work dir, $3 prompt, $4 log file.
+agent_exec() {
+  local agent="$1" dir="$2" prompt="$3" log="$4"
+  if [ "$agent" = claude ]; then
+    (cd "$dir" && claude -p "$prompt" --permission-mode acceptEdits \
+      --allowedTools "Bash($ROOT/p2v *),Bash($(cd "$ROOT" && pwd -P)/p2v *),Bash(ls *),Bash(cat *),Bash(head *),Bash(wc *),Bash(grep *),Read,Write,Edit,Glob,Grep,Task,Agent" \
+      --add-dir "$ROOT" --add-dir "$P2V_HOME" --output-format json > "$log")
+    "$SYSPY" -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('result','')); sys.exit(1 if d.get('is_error') else 0)" "$log"
+  else
+    # shellcheck disable=SC2086
+    (cd "$dir" && codex exec ${P2V_CODEX_ARGS:---full-auto --skip-git-repo-check} -C "$dir" "$prompt" 2>&1 | tee "$log")
+  fi
+}
+
+verify() {
   need_tools
-  command -v claude >/dev/null || { echo "p2v run needs the claude CLI on PATH"; exit 1; }
-  local id; id=$("$SYSPY" "$ROOT/scripts/fetch_paper.py" --id "$1") || { echo "not an arXiv link or id: $1"; exit 2; }
-  mkdir -p "$P2V_HOME/logs"; local log="$P2V_HOME/logs/$id.json"
-  echo "paper2video: $id  (log: $log)"
-  (cd "$P2V_HOME" && claude -p "/paper2video $*" --permission-mode acceptEdits \
-    --allowedTools "Bash($ROOT/p2v *),Bash($(cd "$ROOT" && pwd -P)/p2v *),Bash($HOME/.claude/skills/paper2video/p2v *),Bash(ls *),Bash(cat *),Bash(head *),Bash(wc *),Bash(grep *),Read,Write,Edit,Glob,Grep,Task,Agent" \
-    --add-dir "$ROOT" --output-format json > "$log")
-  "$SYSPY" -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('result','')); sys.exit(1 if d.get('is_error') else 0)" "$log"
+  local agent="" scenes="" job=""
+  while [ $# -gt 0 ]; do case "$1" in
+    --agent) agent="${2:-}"; shift 2 ;; --scenes) scenes="${2:-}"; shift 2 ;; *) job="$1"; shift ;; esac; done
+  need_job "$job"
+  [ -n "$agent" ] && export P2V_AGENT="$agent"
+  agent=$(pick_agent) || exit 1
+  local J="$P2V_JOBS/$job" out="VERIFY.md" scope="the whole video"
+  if [ -n "$scenes" ]; then out="VERIFY_${scenes%%,*}.md"; scope="only these scenes of script.json: $scenes (one part of a long video)"; fi
+  "$PY" "$ROOT/scripts/check_claims.py" "$job" >/dev/null || true   # fresh build/VERIFY_auto.md for the verifier
+  mkdir -p "$P2V_HOME/logs"
+  local prompt="You are the independent verifier for the doc2video job in $J. You did not write it; judge it.
+Follow $ROOT/references/verification.md exactly (all layers that apply to the document type in paper/meta.json).
+Scope: $scope.
+Read only: paper/paper.txt, paper/transcribed.txt (if present), paper/meta.json, paper/pages/*.jpg (to check transcriptions and slide content), script.json, claims.json, BRIEF.md, the job's .js scene files, build/VERIFY_auto.md, build/onscreen.json and build/preview_*.jpg (look at the images).
+You may run: $ROOT/p2v check $job
+Write your report to $J/$out in the format given in verification.md, ending with 'overall: PASS', 'overall: FIX-AND-RERUN' or 'overall: BLOCKED'. Do not edit any other file."
+  echo "verifier: $agent, job $job, scope: $scope -> $J/$out"
+  agent_exec "$agent" "$J" "$prompt" "$P2V_HOME/logs/verify_${job}.log"
+}
+
+run_unattended() {
+  local agent=""
+  [ "${1:-}" = "--agent" ] && { agent="${2:-}"; shift 2; }
+  [ $# -ge 1 ] || { echo "usage: p2v run [--agent claude|codex] <arxiv link | file.pdf | pdf link> [overrides]"; exit 2; }
+  need_tools
+  [ -n "$agent" ] && export P2V_AGENT="$agent"
+  agent=$(pick_agent) || exit 1
+  local src="$1"; shift
+  # Fetch here, outside the agent, so agent sandboxes without network (Codex by default) still work.
+  local out; out=$("$PY" "$ROOT/scripts/fetch_paper.py" "$src") || { echo "$out"; exit 2; }
+  echo "$out"
+  local id; id=$(printf '%s' "$out" | "$SYSPY" -c "import json,re,sys; t=sys.stdin.read(); m=re.search(r'\{.*?\n\}', t, re.S); print(json.loads(m.group(0))['job'])") \
+    || { echo "p2v: could not read the job id from the fetch output"; exit 2; }
+  mkdir -p "$P2V_HOME/logs"; local log="$P2V_HOME/logs/$id.$agent.log"
+  echo "doc2video: $id via $agent  (log: $log)"
+  if [ "$agent" = claude ]; then
+    agent_exec claude "$P2V_HOME" "/doc2video $id $*" "$log"
+  else
+    agent_exec codex "$P2V_HOME" "Make the doc2video explainer video for job '$id' (already fetched into $P2V_JOBS/$id). Overrides: ${*:-none}.
+Read $ROOT/SKILL.md first and follow it from step 2; the skill folder is $ROOT and every command is $ROOT/p2v <subcommand>.
+This is an unattended run: do not ask questions; stop only where SKILL.md says to stop." "$log"
+  fi
 }
 
 CMD="${1:-help}"; shift || true
@@ -154,16 +224,17 @@ case "$CMD" in
   setup)   setup ;;
   doctor)  doctor ;;
   paths)   "$SYSPY" "$ROOT/scripts/p2v_paths.py" --shell ;;
-  fetch)   need_tools; [ -n "${1:-}" ] || { echo "usage: p2v fetch <arxiv link or id>"; exit 2; }; exec "$PY" "$ROOT/scripts/fetch_paper.py" "$@" ;;
-  check)   need_tools; need_job "${1:-}"; exec "$PY" "$ROOT/scripts/check_claims.py" "$@" ;;
-  tts)     need_tools; need_job "${1:-}"; exec "$PY" "$ROOT/scripts/tts.py" "$@" ;;
-  preview) need_tools; need_job "${1:-}"; exec node "$ROOT/scripts/render.mjs" "$1" --preview ;;
-  render)  need_tools; need_job "${1:-}"; exec node "$ROOT/scripts/render.mjs" "$@" ;;
+  fetch)   need_tools; [ -n "${1:-}" ] || { echo "usage: p2v fetch <arxiv link or id | file.pdf | pdf link> [--job ID] [--type slides|paper|document] [--figures own|unknown]"; exit 2; }; exec "$PY" "$ROOT/scripts/fetch_paper.py" "$@" ;;
+  check)   need_job "${1:-}"; need_tools; exec "$PY" "$ROOT/scripts/check_claims.py" "$@" ;;
+  tts)     need_job "${1:-}"; need_tools; exec "$PY" "$ROOT/scripts/tts.py" "$@" ;;
+  preview) need_job "${1:-}"; need_tools; exec node "$ROOT/scripts/render.mjs" "$@" --preview ;;
+  render)  need_job "${1:-}"; need_tools; exec node "$ROOT/scripts/render.mjs" "$@" ;;
+  verify)  verify "$@" ;;
   collect) exec node "$ROOT/scripts/collect.mjs" ;;
   gpus)    exec node -e 'import(process.argv[1]).then(m => console.log(m.formatGpus()))' "$ROOT/scripts/gpu.mjs" ;;
   smoke)   smoke "${1:-}" ;;
   test)    "$SYSPY" "$ROOT/tests/test_python.py" && node "$ROOT/tests/test_server.mjs" ;;
   run)     run_unattended "$@" ;;
-  help|-h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
+  help|-h|--help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) echo "p2v: unknown command '$CMD' (try: p2v help)"; exit 2 ;;
 esac

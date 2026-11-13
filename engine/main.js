@@ -33,10 +33,19 @@ const built = {};
 for (const s of TIMING) {
   const f = factories[s.id];
   if (typeof f !== 'function') throw new Error(`scenes.js has no factory for scene "${s.id}"`);
-  built[s.id] = f();
+  built[s.id] = await f();   // a factory may be async (e.g. pageImage preloads its picture so every frame is deterministic)
 }
 const TOTAL = TIMING.reduce((a, s) => Math.max(a, s.start + s.dur), 0);
 window.TOTAL = TOTAL; window.NFRAMES = Math.ceil(TOTAL * FPS); window.TIMING = TIMING;
+
+// Chapters: a scene with "chapter": "Title" in script.json starts one. They show as ticks on the progress bar and,
+// after the chapter's first scene, as a small heading at the top right (style.chapterHeading: false turns it off).
+const CHAPTERS = [];
+{
+  const byId = Object.fromEntries((SCRIPT.scenes || []).map(s => [s.id, s]));
+  for (const s of TIMING) { const c = byId[s.id]?.chapter; if (c) CHAPTERS.push({ title: String(c), start: s.start, first: s.id }); }
+}
+window.CHAPTERS = CHAPTERS;
 
 function bg2d() {
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
@@ -85,6 +94,12 @@ export function renderAt(T) {
   if (lab) chip(ctx, lab, 60, 92, '#ffffff', eo(seg(t, .2, .7)), 28);
   subtitle(sc, t);
   rrect(ctx, 0, H - 6, Math.round(W * T / TOTAL), 6, 0, C.green, null, 0, .9);   // whole pixels: an anti-aliased tip can differ by render order
+  if (CHAPTERS.length > 1) {
+    for (const c of CHAPTERS.slice(1)) rrect(ctx, Math.round(W * c.start / TOTAL) - 1, H - 12, 3, 12, 0, '#ffffff', null, 0, .55);
+    let cur = null; for (const c of CHAPTERS) if (T >= c.start) cur = c;
+    if (cur && cur.first !== sc.id && STYLE.chapterHeading !== false)
+      txt(ctx, cur.title, W - 60, 52, { size: 22, weight: 700, align: 'right', color: C.gray, alpha: .9 * eo(seg(t, .2, .7)), maxW: 760 });
+  }
   const fade = Math.max(i === 0 ? 1 - seg(t, 0, .6) : 1 - seg(t, 0, .35), seg(t, sc.dur - .3, sc.dur));
   if (fade > 0) { ctx.save(); ctx.globalAlpha = fade; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
 }

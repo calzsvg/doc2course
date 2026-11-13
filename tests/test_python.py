@@ -8,15 +8,17 @@ import json, os, shutil, subprocess, sys, tempfile, unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'scripts'))
 from check_claims import nums, spoken_numbers  # noqa: E402
-from fetch_paper import parse_id  # noqa: E402
+from fetch_paper import parse_id, source_kind, slug_id  # noqa: E402
 
 P2V = os.path.join(ROOT, 'p2v')
 
 
-def make_job(base, name, paper, scenes, claims, allow=None, js=None, onscreen=None):
+def make_job(base, name, paper, scenes, claims, allow=None, js=None, onscreen=None, transcribed=None):
     J = os.path.join(base, name)
     os.makedirs(os.path.join(J, 'paper'))
-    with open(os.path.join(J, 'paper', 'paper.txt'), 'w', encoding='utf-8') as f: f.write('=== page 1 ===\n' + paper)
+    with open(os.path.join(J, 'paper', 'paper.txt'), 'w', encoding='utf-8') as f: f.write(paper if paper.startswith('\n=== page') else '=== page 1 ===\n' + paper)
+    if transcribed is not None:
+        with open(os.path.join(J, 'paper', 'transcribed.txt'), 'w', encoding='utf-8') as f: f.write(transcribed)
     with open(os.path.join(J, 'script.json'), 'w', encoding='utf-8') as f: json.dump({'scenes': scenes}, f)
     with open(os.path.join(J, 'claims.json'), 'w', encoding='utf-8') as f: json.dump({'claims': claims, 'allow_numbers': allow or {}}, f)
     if js is not None:
@@ -45,7 +47,7 @@ class Numbers(unittest.TestCase):
             '-3 and 3': ['-3', '3'], '1e-3': ['1e-3'], '10^3': ['10^3'], '10^{-4}': ['10^-4'],
             '2-3 range': ['2', '3'], '(\u22128.5%)': ['-8.5'], '+10.07 points': ['10.07'],
             '142센티미터': ['142'], '1,000 and 1,2': ['1000', '1,2'], 'v2 3D 60.9.': ['60.9'], '67.0%': ['67'], '1-D slice': [], '0.50': ['0.5'], '1.000': ['1.000'], '10.0x': ['10'],
-            '\u2460 Intro \u246a Limits': [],
+            '\u2460 Intro \u246a Limits': [], '\u03a3m(3,4,5,6,7)': ['3', '4', '5', '6', '7'], '1,234,567': ['1234567'],
         }
         for s, want in cases.items():
             self.assertEqual(nums(s), want, s)
@@ -159,21 +161,79 @@ class Paths(unittest.TestCase):
     def test_layouts(self):
         home = tempfile.mkdtemp(prefix='p2vhome-')
         try:
-            cache = os.path.join(home, '.claude', 'plugins', 'cache', 'mkt', 'paper2video', 'abc123')
-            skills = os.path.join(home, '.claude', 'skills', 'paper2video')
-            for d in (cache, skills):
+            cache = os.path.join(home, '.claude', 'plugins', 'cache', 'mkt', 'doc2video', 'abc123')
+            skills = os.path.join(home, '.claude', 'skills', 'doc2video')
+            codex = os.path.join(home, '.codex', 'skills', 'doc2video')
+            for d in (cache, skills, codex):
                 os.makedirs(os.path.join(d, 'scripts'))
                 shutil.copy(os.path.join(ROOT, 'scripts', 'p2v_paths.py'), os.path.join(d, 'scripts'))
             p = self.paths(cache, home)
-            self.assertEqual(p['P2V_TOOLS'], os.path.join(home, '.claude', 'plugins', 'data', 'paper2video-mkt'))
-            self.assertEqual(p['P2V_JOBS'], os.path.join(home, 'paper2video', 'jobs'))
+            self.assertEqual(p['P2V_TOOLS'], os.path.join(home, '.claude', 'plugins', 'data', 'doc2video-mkt'))
+            self.assertEqual(p['P2V_JOBS'], os.path.join(home, 'doc2video', 'jobs'))
             p = self.paths(skills, home)
             self.assertEqual(p['P2V_TOOLS'], os.path.join(skills, '.tools'))
-            self.assertEqual(p['P2V_OUT'], os.path.join(home, 'paper2video', 'videos'))
+            self.assertEqual(p['P2V_OUT'], os.path.join(home, 'doc2video', 'videos'))
+            p = self.paths(codex, home)
+            self.assertEqual(p['P2V_TOOLS'], os.path.join(codex, '.tools'))
+            self.assertEqual(p['P2V_JOBS'], os.path.join(home, 'doc2video', 'jobs'))
             p = self.paths(skills, home, P2V_HOME='/tmp/x y')
             self.assertEqual(p['P2V_JOBS'], '/tmp/x y/jobs')
         finally:
             shutil.rmtree(home, ignore_errors=True)
+
+
+class Sources(unittest.TestCase):
+    def test_kinds(self):
+        tmp = tempfile.mkdtemp(prefix='p2vsrc-')
+        try:
+            local = os.path.join(tmp, '2610.30340.pdf')            # a local file wins over an id-looking name
+            with open(local, 'wb') as f: f.write(b'%PDF-1.4')
+            self.assertEqual(source_kind(local), 'local')
+            self.assertEqual(source_kind('2610.30340'), 'arxiv')
+            self.assertEqual(source_kind('https://arxiv.org/pdf/2610.30340'), 'arxiv')
+            self.assertEqual(source_kind('https://example.edu/slides/2023.12345.pdf'), 'url')
+            self.assertIsNone(source_kind(os.path.join(tmp, 'missing.pdf')))
+            self.assertIsNone(source_kind('hello'))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_slug_ids(self):
+        a = slug_id('8주차 실습.pdf', b'x')
+        self.assertRegex(a, r'^8-[0-9a-f]{6}$')
+        self.assertEqual(a, slug_id('/elsewhere/8주차 실습.pdf', b'x'))        # same file, same job
+        self.assertNotEqual(a, slug_id('8주차 실습.pdf', b'y'))
+        self.assertRegex(slug_id('강의.pdf', b'x'), r'^doc-[0-9a-f]{6}$')
+        self.assertRegex(slug_id('Lecture 08 - Joins (v2).pdf', b'x'), r'^lecture-08-joins-v2-[0-9a-f]{6}$')
+
+
+class LectureClaims(unittest.TestCase):
+    def setUp(self): self.base = tempfile.mkdtemp(prefix='p2vlec-')
+    def tearDown(self): shutil.rmtree(self.base, ignore_errors=True)
+    PAGES = '\n=== page 1 ===\nIntro to joins\n=== page 2 ===\nAn inner join keeps matching rows only.\n'
+
+    def run_job(self, claims, scenes=None, **kw):
+        shutil.rmtree(os.path.join(self.base, 'j'), ignore_errors=True)
+        make_job(self.base, 'j', self.PAGES, scenes or [{'id': 'a', 's': [['ok', 'ok']]}], claims, **kw)
+        return check(self.base, 'j')
+
+    def test_page_pinned_quote(self):
+        q = {'id': 'c1', 'kind': 'quote', 'text': 'x', 'quote': 'An inner join keeps matching rows', 'used_in': ['a.0']}
+        self.assertEqual(self.run_job([{**q, 'page': 2}])[0], 0)
+        code, out = self.run_job([{**q, 'page': 1}])
+        self.assertEqual(code, 1, out); self.assertIn('on page 1', out)
+
+    def test_transcribed_is_review(self):
+        q = {'id': 'c1', 'kind': 'quote', 'text': 'x', 'quote': 'SELECT * FROM emp', 'page': 3, 'used_in': ['a.0']}
+        code, out = self.run_job([q], transcribed='\n=== page 3 ===\nSQL> SELECT * FROM emp;\n')
+        self.assertEqual(code, 0, out); self.assertIn('REVIEW', out); self.assertIn('transcribed', out)
+
+    def test_background_and_example(self):
+        claims = [{'id': 'b1', 'kind': 'background', 'text': 'a key identifies a row', 'basis': 'standard definition'},
+                  {'id': 'e1', 'kind': 'example', 'text': '3 rows times 2 rows = 6 rows', 'on_screen_label': 'example', 'used_in': ['a.0']}]
+        code, out = self.run_job(claims, scenes=[{'id': 'a', 's': [['3 x 2 = 6 rows (example)', 'three by two is six rows']]}])
+        self.assertEqual(code, 0, out); self.assertIn('FAIL 0  WARN 0', out)
+        code, out = self.run_job([{'id': 'b1', 'kind': 'background', 'text': 'x'}, {'id': 'e1', 'kind': 'example', 'text': 'y'}])
+        self.assertIn('WARN 2', out)
 
 
 class Cli(unittest.TestCase):
