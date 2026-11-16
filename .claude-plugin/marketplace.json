@@ -1,10 +1,10 @@
 {
   "name": "calzsvg",
-  "description": "doc2video: documents in, explainer videos out (fork of SunandBean/paper2video)",
+  "description": "doc2course: documents in, explainer videos out (fork of SunandBean/paper2video)",
   "owner": { "name": "calzsvg", "url": "https://github.com/calzsvg" },
   "plugins": [
     {
-      "name": "doc2video",
+      "name": "doc2course",
       "source": "./",
       "description": "Paper, lecture slides or any PDF in; narrated, fact-checked explainer video out"
     }

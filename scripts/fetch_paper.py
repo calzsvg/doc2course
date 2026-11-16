@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from p2v_paths import ROOT, JOBS  # noqa: E402
-UA = {'User-Agent': 'doc2video/0.2 (personal explainer videos)'}
+UA = {'User-Agent': 'doc2course/0.2 (personal explainer videos)'}
 
 LICENSES = {
     'creativecommons.org/licenses/by/4.0': 'CC BY 4.0',

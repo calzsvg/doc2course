@@ -161,21 +161,21 @@ class Paths(unittest.TestCase):
     def test_layouts(self):
         home = tempfile.mkdtemp(prefix='p2vhome-')
         try:
-            cache = os.path.join(home, '.claude', 'plugins', 'cache', 'mkt', 'doc2video', 'abc123')
-            skills = os.path.join(home, '.claude', 'skills', 'doc2video')
-            codex = os.path.join(home, '.codex', 'skills', 'doc2video')
+            cache = os.path.join(home, '.claude', 'plugins', 'cache', 'mkt', 'doc2course', 'abc123')
+            skills = os.path.join(home, '.claude', 'skills', 'doc2course')
+            codex = os.path.join(home, '.codex', 'skills', 'doc2course')
             for d in (cache, skills, codex):
                 os.makedirs(os.path.join(d, 'scripts'))
                 shutil.copy(os.path.join(ROOT, 'scripts', 'p2v_paths.py'), os.path.join(d, 'scripts'))
             p = self.paths(cache, home)
-            self.assertEqual(p['P2V_TOOLS'], os.path.join(home, '.claude', 'plugins', 'data', 'doc2video-mkt'))
-            self.assertEqual(p['P2V_JOBS'], os.path.join(home, 'doc2video', 'jobs'))
+            self.assertEqual(p['P2V_TOOLS'], os.path.join(home, '.claude', 'plugins', 'data', 'doc2course-mkt'))
+            self.assertEqual(p['P2V_JOBS'], os.path.join(home, 'doc2course', 'jobs'))
             p = self.paths(skills, home)
             self.assertEqual(p['P2V_TOOLS'], os.path.join(skills, '.tools'))
-            self.assertEqual(p['P2V_OUT'], os.path.join(home, 'doc2video', 'videos'))
+            self.assertEqual(p['P2V_OUT'], os.path.join(home, 'doc2course', 'videos'))
             p = self.paths(codex, home)
             self.assertEqual(p['P2V_TOOLS'], os.path.join(codex, '.tools'))
-            self.assertEqual(p['P2V_JOBS'], os.path.join(home, 'doc2video', 'jobs'))
+            self.assertEqual(p['P2V_JOBS'], os.path.join(home, 'doc2course', 'jobs'))
             p = self.paths(skills, home, P2V_HOME='/tmp/x y')
             self.assertEqual(p['P2V_JOBS'], '/tmp/x y/jobs')
         finally:

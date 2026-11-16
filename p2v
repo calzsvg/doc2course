@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# doc2video command line (forked from paper2video). One entry point for every step; works from any directory.
+# doc2course command line (forked from paper2video). One entry point for every step; works from any directory.
 #
 #   p2v setup                 install tools (Node packages, ffmpeg, headless Chromium, Python venv, voice model)
 #   p2v doctor                show folders and what is installed
@@ -18,7 +18,7 @@
 #   p2v paths                 print the resolved folders as export lines
 #
 # Folders (details in scripts/p2v_paths.py): code stays in the skill folder, tools in P2V_TOOLS,
-# jobs and videos in P2V_HOME (~/doc2video for installed copies). All four can be overridden by env vars.
+# jobs and videos in P2V_HOME (~/doc2course for installed copies). All four can be overridden by env vars.
 # Agents: P2V_AGENT (claude|codex) picks the CLI for verify/run; P2V_CODEX_ARGS overrides the codex exec flags
 # (default: --full-auto --skip-git-repo-check).
 set -euo pipefail
@@ -185,7 +185,7 @@ verify() {
   if [ -n "$scenes" ]; then out="VERIFY_${scenes%%,*}.md"; scope="only these scenes of script.json: $scenes (one part of a long video)"; fi
   "$PY" "$ROOT/scripts/check_claims.py" "$job" >/dev/null || true   # fresh build/VERIFY_auto.md for the verifier
   mkdir -p "$P2V_HOME/logs"
-  local prompt="You are the independent verifier for the doc2video job in $J. You did not write it; judge it.
+  local prompt="You are the independent verifier for the doc2course job in $J. You did not write it; judge it.
 Follow $ROOT/references/verification.md exactly (all layers that apply to the document type in paper/meta.json).
 Scope: $scope.
 Read only: paper/paper.txt, paper/transcribed.txt (if present), paper/meta.json, paper/pages/*.jpg (to check transcriptions and slide content), script.json, claims.json, BRIEF.md, the job's .js scene files, build/VERIFY_auto.md, build/onscreen.json and build/preview_*.jpg (look at the images).
@@ -209,11 +209,11 @@ run_unattended() {
   local id; id=$(printf '%s' "$out" | "$SYSPY" -c "import json,re,sys; t=sys.stdin.read(); m=re.search(r'\{.*?\n\}', t, re.S); print(json.loads(m.group(0))['job'])") \
     || { echo "p2v: could not read the job id from the fetch output"; exit 2; }
   mkdir -p "$P2V_HOME/logs"; local log="$P2V_HOME/logs/$id.$agent.log"
-  echo "doc2video: $id via $agent  (log: $log)"
+  echo "doc2course: $id via $agent  (log: $log)"
   if [ "$agent" = claude ]; then
-    agent_exec claude "$P2V_HOME" "/doc2video $id $*" "$log"
+    agent_exec claude "$P2V_HOME" "/doc2course $id $*" "$log"
   else
-    agent_exec codex "$P2V_HOME" "Make the doc2video explainer video for job '$id' (already fetched into $P2V_JOBS/$id). Overrides: ${*:-none}.
+    agent_exec codex "$P2V_HOME" "Make the doc2course explainer video for job '$id' (already fetched into $P2V_JOBS/$id). Overrides: ${*:-none}.
 Read $ROOT/SKILL.md first and follow it from step 2; the skill folder is $ROOT and every command is $ROOT/p2v <subcommand>.
 This is an unattended run: do not ask questions; stop only where SKILL.md says to stop." "$log"
   fi

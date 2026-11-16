@@ -1,6 +1,6 @@
 ---
-name: doc2video
-description: Turn a document (arXiv paper, lecture slides, handout, report: any PDF) into a narrated, fact-checked explainer video (1080p MP4) with animated 2D/3D scenes, subtitles, chapters and a verification report. Run with /doc2video (Claude Code) or $doc2video (Codex) followed by <arxiv link | path to PDF | PDF link> [overrides].
+name: doc2course
+description: Turn a document (arXiv paper, lecture slides, handout, report: any PDF) into a narrated, fact-checked explainer video (1080p MP4) with animated 2D/3D scenes, subtitles, chapters and a verification report. Run with /doc2course (Claude Code) or $doc2course (Codex) followed by <arxiv link | path to PDF | PDF link> [overrides].
 argument-hint: <arxiv link | file.pdf | pdf link> [overrides]
 disable-model-invocation: true
 license: MIT
@@ -8,7 +8,7 @@ compatibility: Claude Code or Codex with a local shell. Needs Node 18+, Python 3
 allowed-tools: Bash(${CLAUDE_SKILL_DIR}/p2v *)
 ---
 
-# doc2video
+# doc2course
 
 Document in, explainer video out. The user picks the document; everything after that is this workflow, with
 **strict cross-checking instead of script approval**. The skill never publishes anything.
@@ -22,7 +22,7 @@ Every step runs through one command: `${CLAUDE_SKILL_DIR}/p2v <subcommand>` (wor
 - **Claude Code** replaces `${CLAUDE_SKILL_DIR}` with the skill folder. Type that full path exactly as written here,
   not a shell variable or `cd` + `./p2v`: the pre-approved permission matches this exact command.
 - **Codex and other agents**: if `${CLAUDE_SKILL_DIR}` was not replaced, it means the folder that contains this
-  SKILL.md. Use its absolute path everywhere below (e.g. `~/.codex/skills/doc2video/p2v doctor`).
+  SKILL.md. Use its absolute path everywhere below (e.g. `~/.codex/skills/doc2course/p2v doctor`).
   Codex's default sandbox has no network: `p2v setup` and `p2v fetch` of a link need it, so request approval to run
   them outside the sandbox (or the user runs them once). Everything after fetch works offline.
 
@@ -30,7 +30,7 @@ Every step runs through one command: `${CLAUDE_SKILL_DIR}/p2v <subcommand>` (wor
    tell the user "first run: installing tools (~1 GB, a few minutes)" and run `p2v setup` once with the longest
    timeout your shell tool allows (Claude Code: 600000 ms). If it is cut off, run it again: finished parts are skipped.
 2. Write job files in the **jobs** folder that doctor printed (`<jobs>/<id>/`), never in the skill folder.
-   Installed copies keep jobs in `~/doc2video/` (override with `P2V_HOME`); a development clone keeps them in the repo.
+   Installed copies keep jobs in `~/doc2course/` (override with `P2V_HOME`); a development clone keeps them in the repo.
    Finished videos of local PDFs are saved next to the PDF; others go to the videos folder. Tools and caches
    (Chromium, voice models) live in the tools folder.
 

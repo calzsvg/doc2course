@@ -1,4 +1,4 @@
-# doc2video
+# doc2course
 
 A skill for **Claude Code and Codex**: turn a document into a narrated, fact-checked explainer video.
 It takes an arXiv paper, **lecture slides**, a handout, or any other PDF, and makes anything from a 5-minute teaser to a
@@ -7,10 +7,10 @@ It takes an arXiv paper, **lecture slides**, a handout, or any other PDF, and ma
 Forked from [SunandBean/paper2video](https://github.com/SunandBean/paper2video), which takes arXiv papers and makes 4-5 minute videos.
 
 ```
-/doc2video ~/Downloads/week8-lab.pdf                    # Claude Code: lecture slides → lecture-mode video (chapters, examples, quizzes)
-$doc2video ~/Downloads/week8-lab.pdf 한국어              # Codex
-/doc2video https://arxiv.org/abs/2610.30340             # a paper → 10-15 min walk-through (standard mode)
-/doc2video 2610.30340 short                             # the original 4-5 min teaser
+/doc2course ~/Downloads/week8-lab.pdf                    # Claude Code: lecture slides → lecture-mode video (chapters, examples, quizzes)
+$doc2course ~/Downloads/week8-lab.pdf 한국어              # Codex
+/doc2course https://arxiv.org/abs/2610.30340             # a paper → 10-15 min walk-through (standard mode)
+/doc2course 2610.30340 short                             # the original 4-5 min teaser
 ```
 
 ![demo: depth to 3D points, query-based detection, BEV occupancy](docs/demo.gif)
@@ -20,7 +20,7 @@ $doc2video ~/Downloads/week8-lab.pdf 한국어              # Codex
 
 ## What changed from paper2video
 
-| | paper2video | doc2video |
+| | paper2video | doc2course |
 |---|---|---|
 | Input | arXiv link | arXiv link, **local PDF** (slides, handouts, notes, reports), PDF link. Detects slides vs. papers, renders page images so the agent can read diagrams and screenshots, and lets the agent transcribe pages that have no text layer |
 | Length | 4-5 min | `short` 4-6 min · `standard` 10-15 min (papers) · `lecture` about 1-1.5 min per content slide (slides) · `deep` 20-40 min |
@@ -35,27 +35,27 @@ $doc2video ~/Downloads/week8-lab.pdf 한국어              # Codex
 Requires git, Node 18+, Python 3.10-3.13 and about 1 GB of disk. macOS or Linux; Korean videos on Linux need Noto Sans CJK.
 
 ```bash
-# Claude Code (~/.claude/skills/doc2video)
+# Claude Code (~/.claude/skills/doc2course)
 curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2course/main/install.sh | bash
-# Codex (${CODEX_HOME:-~/.codex}/skills/doc2video)
+# Codex (${CODEX_HOME:-~/.codex}/skills/doc2course)
 curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2course/main/install.sh | bash -s -- --codex
 # both, with the clone on another disk (the agent folders get symlinks; tools, caches, jobs and videos stay on that disk)
-curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2course/main/install.sh | P2V_DIR=/Volumes/External/doc2video bash -s -- --both
+curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2course/main/install.sh | P2V_DIR=/Volumes/External/doc2course bash -s -- --both
 ```
 
-Claude Code plugin route: `/plugin marketplace add calzsvg/doc2course`, then `/plugin install doc2video@calzsvg`.
+Claude Code plugin route: `/plugin marketplace add calzsvg/doc2course`, then `/plugin install doc2course@calzsvg`.
 
 Where finished videos go: a video made from a **local PDF is saved next to that PDF** (`~/lectures/week8.pdf` →
 `~/lectures/week8 - <video title>.mp4`, plus `.chapters.txt` for long videos). Videos of arXiv papers and PDF links go to the
 videos folder. Set `P2V_OUT` to send every video to one folder, or `P2V_NEXT_TO_SOURCE=0` to turn the next-to-PDF rule off.
 
 Where everything else goes: tools and caches (Node packages, headless Chromium, Python venv, voice models) in the tools folder;
-jobs (and videos not made from a local PDF) in `~/doc2video/` for installed copies, or inside the clone when the skill folder is a symlink
+jobs (and videos not made from a local PDF) in `~/doc2course/` for installed copies, or inside the clone when the skill folder is a symlink
 to a clone elsewhere or a development checkout. Override with `P2V_HOME` (jobs and videos), `P2V_OUT`, `P2V_JOBS`, `P2V_TOOLS`.
 `p2v doctor` prints every folder.
 
 ### Codex notes
-- Invoke with `$doc2video <source> [overrides]` (or describe the task; Codex picks the skill from its description).
+- Invoke with `$doc2course <source> [overrides]` (or describe the task; Codex picks the skill from its description).
 - Codex's default sandbox has no network. Run `p2v setup` once outside it (the installer does), and approve the fetch
   step when the source is a link. Korean narration downloads the Supertonic model on first use: run `p2v smoke --ko`
   once outside the sandbox.
@@ -67,10 +67,10 @@ to a clone elsewhere or a development checkout. Override with `P2V_HOME` (jobs a
 ## Use
 
 ```
-/doc2video <arxiv link | file.pdf | pdf link> [overrides]
-/doc2video ~/lectures/db-week8.pdf deep, Korean
-/doc2video ~/lectures/db-week8.pdf my own slides        # allows showing slide images (credited)
-/doc2video 2610.35607 12 min, voice am_michael
+/doc2course <arxiv link | file.pdf | pdf link> [overrides]
+/doc2course ~/lectures/db-week8.pdf deep, Korean
+/doc2course ~/lectures/db-week8.pdf my own slides        # allows showing slide images (credited)
+/doc2course 2610.35607 12 min, voice am_michael
 ```
 
 Everything the skill does is also a terminal command, `p2v` in the skill folder:

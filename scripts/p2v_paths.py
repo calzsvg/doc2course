@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Where doc2video keeps things (standard library only; scripts/lib.mjs mirrors this).
+"""Where doc2course keeps things (standard library only; scripts/lib.mjs mirrors this).
 
   ROOT   the skill folder (code). For a plugin install this is a cache copy that is replaced on update.
   TOOLS  .venv, models/, node_modules/ (about 1 GB, slow to rebuild)
            plugin install  ~/.claude/plugins/data/<plugin>-<marketplace>/   (survives updates, removed on uninstall)
            otherwise       ROOT/.tools/                                     (git-ignored, survives git pull)
   WORK   jobs/ and videos/
-           ROOT inside an agent's home (installed skill)                    ~/doc2video/
+           ROOT inside an agent's home (installed skill)                    ~/doc2course/
              ~/.claude/ (Claude Code plugin or ~/.claude/skills), ~/.codex/ or $CODEX_HOME (Codex), ~/.agents/
            otherwise (a development clone)                                  ROOT
   Overrides: P2V_TOOLS, P2V_HOME (work dir), P2V_JOBS, P2V_OUT (videos)
@@ -44,7 +44,7 @@ TOOLS = _env('P2V_TOOLS', os.path.join(_HOME, '.claude', 'plugins', 'data', PLUG
 AGENT_HOMES = [os.path.join(_HOME, d) for d in ('.claude', '.codex', '.agents')] + \
               ([os.path.expanduser(os.environ['CODEX_HOME'])] if os.environ.get('CODEX_HOME') else [])
 INSTALLED = any(_under(ROOT, h) for h in AGENT_HOMES)
-WORK = _env('P2V_HOME', os.path.join(_HOME, 'doc2video') if INSTALLED else ROOT)
+WORK = _env('P2V_HOME', os.path.join(_HOME, 'doc2course') if INSTALLED else ROOT)
 JOBS = _env('P2V_JOBS', os.path.join(WORK, 'jobs'))
 VIDEOS = _env('P2V_OUT', os.path.join(WORK, 'videos'))
 MODELS = os.path.join(TOOLS, 'models')

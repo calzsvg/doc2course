@@ -19,7 +19,7 @@ export const toolsDir = root => process.env.P2V_TOOLS ? expand(process.env.P2V_T
 const AGENT_HOMES = () => ['.claude', '.codex', '.agents'].map(d => path.join(HOME, d))
   .concat(process.env.CODEX_HOME ? [expand(process.env.CODEX_HOME)] : []);
 export const workDir = root => process.env.P2V_HOME ? expand(process.env.P2V_HOME)
-  : AGENT_HOMES().some(h => under(root, h)) ? path.join(HOME, 'doc2video') : root;
+  : AGENT_HOMES().some(h => under(root, h)) ? path.join(HOME, 'doc2course') : root;
 export const jobsDir = root => process.env.P2V_JOBS ? expand(process.env.P2V_JOBS) : path.join(workDir(root), 'jobs');
 export const videosDir = root => process.env.P2V_OUT ? expand(process.env.P2V_OUT) : path.join(workDir(root), 'videos');
 // Node packages (three, ffmpeg-static, playwright) live in <tools>/node_modules.

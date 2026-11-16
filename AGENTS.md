@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This repo is the **doc2video** skill (Claude Code and Codex). Two kinds of work happen here:
+This repo is the **doc2course** skill (Claude Code and Codex). Two kinds of work happen here:
 
 1. **Making a video** (the user gave a paper, slides or PDF): read `SKILL.md` and follow it. The skill folder is this
    repo's root; every command is `<repo>/p2v <subcommand>`. Jobs and videos go to the folders `p2v doctor` prints.
