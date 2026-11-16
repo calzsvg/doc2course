@@ -6,9 +6,15 @@ The goal is a video someone can learn from without the document in front of them
 ## Planning (BRIEF.md)
 1. **Inventory.** List every page/slide: `content` (teaches something), `title/agenda`, `exercise`, `admin`
    (logistics, grading), `references`. Every content slide is covered or listed as skipped with a reason.
+   For each content slide also list its **points**: every bullet and sub-point, every labeled part of a figure or
+   table the slide explains, every step of its example (read the page image for figures and scanned slides). Each
+   point is mapped to the scene and sentence that explains it. This point list is the coverage contract the verifier
+   checks; only photos, decorative images and links may be left out, and each such omission is named with a reason.
 2. **Chapters.** Use the document's own sections (slide section headers, numbered parts, paper sections). 4-8 chapters;
    each 2-6 minutes. A chapter that would exceed ~8 minutes is split.
-3. **Budget.** Per chapter: target minutes, scene list, which slides/pages each scene covers. Speaking rate: about
+3. **Budget.** Per chapter: estimated minutes, scene list, which slides/pages each scene covers. The estimate comes
+   from the point list, not the other way round: if the script is longer than planned, split the part (or the
+   chapter), never remove covered points, examples or check questions to save time. Speaking rate: about
    140-160 English words per minute; Korean about 300-350 characters per minute. A 20-minute script is roughly
    3,000 English words: write it chapter by chapter, checking each (`p2v check`) before the next.
 4. **Learning goals.** 2-4 "after this video you can ..." lines, taken from the document's goals if it states them.
@@ -41,6 +47,14 @@ Writing rules:
 - Check questions test the chapter's main point, not trivia. The answer follows from what the video said.
 - Transitions name the link ("Now that rows can be matched by key, the next question is what happens to rows that
   have no match").
+
+## Deeper than the slides
+A lecture video replaces the lecture *and* the slides, so it must say more than the slides do:
+- Every point in the inventory is explained in the narration, not only shown on screen.
+- Add what a lecturer would say aloud: why the idea exists, the intermediate steps the slide skips, a worked example
+  with small checkable values, the common mistake, and how this connects to the previous and next topic.
+- A slide that only shows a figure (datapath, circuit, state diagram, table) gets a walk-through of each part.
+- "Mentioned briefly" is not coverage: a point is covered when the viewer could explain it after watching.
 
 ## Lecture slides specifics
 - Many decks are images (screenshots, scanned handouts, terminal output). Read the page images; transcribe text-less

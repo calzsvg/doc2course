@@ -20,6 +20,10 @@
 | page | kind (content / title / exercise / admin / references) | covered in scene(s) | skipped? why |
 |---|---|---|---|
 
+### Point coverage (content slides; the verifier checks this list)
+| page | point (bullet, sub-point, figure part, table row, example step) | scene.sentence | depth added (why / steps / example / pitfall) |
+|---|---|---|---|
+
 ## 4. Chapters
 | chapter | scenes | pages | target min |
 |---|---|---|---|

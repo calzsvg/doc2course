@@ -63,15 +63,24 @@ cannot be transcribed, verification BLOCKED after 3 rounds, or a toolchain step 
 Longer is not padding: every extra minute must teach something (a step of a derivation, a worked example, a "why",
 a common mistake, a check question). Never repeat a point in other words to fill time.
 
+**Depth beats the clock (lecture material).** The video must explain *more* than the source, never less: every point
+a content slide explains (each bullet and sub-point, each labeled part of a figure, each table row it discusses, each
+step of its example) is explained in the narration, and then the video adds what the slide leaves out (why, the
+intermediate steps, a worked example, the common mistake). Time targets are estimates, not limits: never cut slide
+content, drop a sub-point, a worked example or a check question to land on a target. If a part runs long, split the
+deck into more parts instead.
+
 | Mode | Target | Scenes | Chapters | Use |
 |---|---|---|---|---|
 | `short` | 4-6 min | 10-14 | none | the original paper2video teaser |
 | `standard` (papers) | 10-15 min | 25-40 | 4-6 | full walk-through: background the reader needs, every contribution, the main results with their conditions, ablations, limits |
-| `lecture` (slides, handouts) | about 1-1.5 min per content slide, 12-40 min total | one scene per 1-2 content slides, plus chapter cards, examples and checks | the deck's own sections (4-8) | replaces attending the lecture: explain each slide, add the reasoning the lecturer would say aloud, worked examples, one check question per chapter, recap at the end |
+| `lecture` (slides, handouts) | set by content: about 1.5-2.5 min per content slide; parts of ~15-25 min | one scene per content slide (two for dense ones), plus chapter cards, examples and checks | the deck's own sections (4-8 per part) | replaces attending the lecture and goes deeper: explain every point of each slide, add the reasoning the lecturer would say aloud, worked examples, one check question per chapter, recap at the end |
 | `deep` | 20-40 min | 40-80 | 6-10 | everything in `standard`/`lecture`, plus derivations step by step and extra worked examples |
 
-Decks over ~60 content slides: say so in the report and split into parts (`--job <id>-part1`, ...) rather than one
-60+ minute video, unless the user asked for one video.
+Decks over ~40 content slides: split into parts (`--job <id>-p1`, ...) of ~15-25 minutes each rather than one
+60+ minute video, unless the user asked for one video. Decide the split from the content (sections, ~25-40 content
+slides per part), not from a fixed number of parts; when a part's narration comes out longer than planned, split that
+part again instead of trimming it. Say in the report how the deck was split.
 
 ## Pipeline
 
@@ -99,7 +108,8 @@ Read `references/long-form.md` before writing a script longer than `short`. In b
   from the document) → worked example (`example` claims, labeled on screen) → common mistake or edge case → one check
   question with a pause (`quizCard` + `"pauses"`) → one-line chapter summary.
 - **Slides**: follow the deck's order; never skip a content slide silently (list skipped slides and why in BRIEF.md).
-  Explain what the slide shows; do not read bullets aloud word for word. Code on a slide: walk through it with
+  Cover every point on a content slide (BRIEF.md lists them per slide, see `references/long-form.md`), then go
+  deeper than the slide. Explain what the slide shows; do not read bullets aloud word for word. Code on a slide: walk through it with
   `codeBlock`, highlighting the lines being discussed. Terminal output/screenshots: explain what each part means.
 - **Close** with a recap (`recapList`) and what to study next (only if the document names it).
 - Background the document assumes but does not explain may be added as `background` claims (standard knowledge, with a

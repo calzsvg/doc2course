@@ -59,6 +59,12 @@ Verdict per claim: `ok` / `missing-qualifier` / `misleading` / `wrong`.
 - Slides/handouts: script order follows the deck; every content slide is covered or listed as skipped in BRIEF.md with a
   reason; chapters match the deck's sections; worked examples are correct; check-question answers follow from what the
   video taught; background additions are marked as such and do not contradict the lecture.
+- Coverage (slides/handouts): for every content slide in range, read the slide (page image for figures) and check
+  each point against BRIEF.md's point-coverage table and the narration. A point that is missing, only shown on
+  screen, or only "mentioned" without being explained is `missing-coverage`; the verdict is FIX-AND-RERUN, not an
+  optional note. A point dropped to meet a time target is never an acceptable skip reason.
+- Depth: the video explains more than the slide (reasons, intermediate steps, examples); a scene that only restates
+  its slide is a finding.
 - Long videos: no padding (repeated points, filler sentences); each chapter teaches something new.
 - The paper's own contributions are not confused with prior work it cites (e.g. VGGT, PETR, Instant NuRec).
 - The headline claims in the abstract are represented; nothing important is contradicted later in the paper.

@@ -36,14 +36,14 @@ Requires git, Node 18+, Python 3.10-3.13 and about 1 GB of disk. macOS or Linux;
 
 ```bash
 # Claude Code (~/.claude/skills/doc2video)
-curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2video/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2course/main/install.sh | bash
 # Codex (${CODEX_HOME:-~/.codex}/skills/doc2video)
-curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2video/main/install.sh | bash -s -- --codex
+curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2course/main/install.sh | bash -s -- --codex
 # both, with the clone on another disk (the agent folders get symlinks; tools, caches, jobs and videos stay on that disk)
-curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2video/main/install.sh | P2V_DIR=/Volumes/External/doc2video bash -s -- --both
+curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2course/main/install.sh | P2V_DIR=/Volumes/External/doc2video bash -s -- --both
 ```
 
-Claude Code plugin route: `/plugin marketplace add calzsvg/doc2video`, then `/plugin install doc2video@calzsvg`.
+Claude Code plugin route: `/plugin marketplace add calzsvg/doc2course`, then `/plugin install doc2video@calzsvg`.
 
 Where finished videos go: a video made from a **local PDF is saved next to that PDF** (`~/lectures/week8.pdf` →
 `~/lectures/week8 - <video title>.mp4`, plus `.chapters.txt` for long videos). Videos of arXiv papers and PDF links go to the

@@ -2,8 +2,8 @@
   "name": "doc2video",
   "description": "Turn a paper, lecture slides or any PDF into a narrated, fact-checked explainer video (1080p MP4, chapters for long videos). Local TTS, no API keys, never uploads.",
   "author": { "name": "calzsvg", "url": "https://github.com/calzsvg" },
-  "homepage": "https://github.com/calzsvg/doc2video",
-  "repository": "https://github.com/calzsvg/doc2video",
+  "homepage": "https://github.com/calzsvg/doc2course",
+  "repository": "https://github.com/calzsvg/doc2course",
   "license": "MIT",
   "keywords": ["arxiv", "paper", "lecture", "slides", "pdf", "video", "explainer", "tts", "threejs", "codex"]
 }

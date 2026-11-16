@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # doc2video installer / updater (git clone instead of the plugin marketplace).
-#   curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2video/main/install.sh | bash                 # Claude Code
-#   curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2video/main/install.sh | bash -s -- --codex   # Codex
+#   curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2course/main/install.sh | bash                 # Claude Code
+#   curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2course/main/install.sh | bash -s -- --codex   # Codex
 #   ... | bash -s -- --both                                                                              # both agents
 # Run it again to update. Claude Code: ~/.claude/skills/doc2video (/doc2video). Codex: ${CODEX_HOME:-~/.codex}/skills/doc2video
 # ($doc2video). --both clones once for Claude Code and links the Codex folder to it.
@@ -16,7 +16,7 @@ main() {
     *) echo "doc2video: unknown option $a (--claude, --codex, --both)"; exit 2 ;; esac; done
   local claude_dir="$HOME/.claude/skills/doc2video" codex_dir="${CODEX_HOME:-$HOME/.codex}/skills/doc2video"
   local default; [ "$target" = codex ] && default="$codex_dir" || default="$claude_dir"
-  local dir="${P2V_DIR:-$default}" repo="https://github.com/calzsvg/doc2video.git" c
+  local dir="${P2V_DIR:-$default}" repo="https://github.com/calzsvg/doc2course.git" c
   for c in git node npm python3 curl; do command -v "$c" >/dev/null || { echo "doc2video: '$c' is required"; exit 1; }; done
   if [ -d "$dir/.git" ]; then
     echo "== updating $dir"
