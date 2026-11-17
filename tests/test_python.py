@@ -9,6 +9,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'scripts'))
 from check_claims import nums, spoken_numbers  # noqa: E402
 from fetch_paper import parse_id, source_kind, slug_id  # noqa: E402
+from ko_numbers import spell, sino, native  # noqa: E402
 
 P2V = os.path.join(ROOT, 'p2v')
 
@@ -62,6 +63,27 @@ class Numbers(unittest.TestCase):
                  'twelve three': ['12', '3'], 'forty five': ['45']}
         for s, want in cases.items():
             self.assertEqual(spoken_numbers(s), want, s)
+
+
+class KoreanNumbers(unittest.TestCase):
+    def test_sino(self):
+        for n, want in [(0, '영'), (10, '십'), (16, '십육'), (100, '백'), (1111, '천백십일'), (10000, '만'),
+                        (500000, '오십만'), (100000000, '일억'), (2026, '이천이십육'), (110000, '십일만')]:
+            self.assertEqual(sino(n), want, n)
+
+    def test_native(self):
+        self.assertEqual([native(n) for n in (1, 3, 4, 20, 21, 99)], ['한', '세', '네', '스무', '스물한', '아흔아홉'])
+
+    def test_sentences(self):
+        for text, want in [
+            ('0이면', '영이면'), ('3개', '세 개'), ('500,000개', '오십만 개'), ('1번째, 11번째', '첫 번째, 열한 번째'),
+            ('16비트', '십육 비트'), ('3.14', '삼 점 일사'), ('50%', '오십 퍼센트'), ('-3이에요', '마이너스 삼이에요'),
+            ('3개월', '삼 개월'), ('5번 레지스터', '오 번 레지스터'), ('3번 반복', '세 번 반복'), ('4장에서', '사 장에서'),
+            ('2대1', '이 대 일'), ('1~3', '일에서 삼'), ('2^10', '이의 십 제곱'), ('1/4', '사 분의 일'), ('0010', '영 영 일 영'),
+            ('LC-3와 x86', 'LC-3와 x86'), ('R3에 0, 1', 'R3에 영, 일'), ('20개, 21명', '스무 개, 스물한 명'),
+            ('설명 없음', '설명 없음'),
+        ]:
+            self.assertEqual(spell(text), want, text)
 
 
 class ArxivIds(unittest.TestCase):

@@ -7,6 +7,8 @@
 Reads <jobs>/<job>/script.json and writes
     <jobs>/<job>/build/narration.wav, build/timing.json
 
+For "lang": "ko", numbers in the spoken text are spelled out in Korean first (scripts/ko_numbers.py).
+
 Each synthesized sentence is cached in build/tts_cache/ (keyed by engine, voice, speed, language and text), so after
 editing a few sentences of a long script only those are synthesized again. --no-cache ignores the cache.
 
@@ -25,6 +27,7 @@ np = None  # imported in main(): `--download-models` must work before the venv i
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from p2v_paths import JOBS, MODELS  # noqa: E402
+from ko_numbers import spell as ko_spell  # noqa: E402
 SR = 24000  # set per engine in main()
 REL = 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/'
 KOKORO_FILES = {  # name: (size, sha256) of the model-files-v1.0 release assets
@@ -104,7 +107,10 @@ def main():
     for f in ('timing.json', 'narration.wav'):
         if os.path.exists(os.path.join(B, f)): os.remove(os.path.join(B, f))
     cache_dir = os.path.join(B, 'tts_cache'); os.makedirs(cache_dir, exist_ok=True)
-    texts = [t for sc in script['scenes'] for _, t in sc['s']]
+    # Korean: digits are read as Korean words here (500,000 -> 오십만, 3개 -> 세 개, 0 -> 영), because Supertonic
+    # has no number reader of its own. script.json keeps the digits, so `p2v check` still sees the numbers.
+    spoken = ko_spell if slang == 'ko' else (lambda t: t)
+    texts = [spoken(t) for sc in script['scenes'] for _, t in sc['s']]
     key = lambda text: hashlib.sha1(f'{engine}|{voice}|{speed}|{lang}|{text}'.encode()).hexdigest()
     cached = lambda text: os.path.join(cache_dir, key(text) + '.npz')
     need_engine = engine != 'silent' and (a.no_cache or not all(os.path.exists(cached(t)) for t in texts))
@@ -150,7 +156,7 @@ def main():
         tail = 1.6 if si == 0 else (3.5 if si == len(scenes) - 1 else 0.9)
         start = T; silence(lead); sents = []
         for kk, (sub, tts) in enumerate(sc['s']):
-            x = synth(tts)
+            x = synth(spoken(tts))
             s0 = T - start; add(x)
             sents.append({'start': round(s0, 3), 'dur': round(T - start - s0, 3), 'sub': sub})
             # "pauses": {"0": 4} adds 4 s of silence after sentence 0 (thinking time for a quiz, a pause before a reveal);

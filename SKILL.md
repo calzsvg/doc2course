@@ -120,7 +120,12 @@ When the overrides ask for Korean, or a slide deck/handout is in Korean:
 - `script.json`: `"lang": "ko"`; write subtitles and every on-screen string in natural Korean (plain 해요체 for narration).
   Keep widely used technical terms in English the first time, with a Korean gloss ("BEV(위에서 내려다본 지도)").
 - TTS text (2nd element of each sentence): spell out units and abbreviations the way they should be read
-  ("142센티미터", "에스큐엘", "조인"); digits and dates are read correctly by the engine.
+  ("142센티미터", "에스큐엘", "조인"). Write it as natural Korean speech, not a word-for-word reading of English.
+  Digits may stay: `p2v tts` reads them the Korean way before synthesis (scripts/ko_numbers.py: 500,000 → 오십만,
+  3개 → 세 개, 0 → 영, 1번째 → 첫 번째, 3.14 → 삼 점 일사, 50% → 오십 퍼센트). The default is Sino-Korean; native
+  numbers are used for 1-99 before counting words (개, 명, 가지, 번째, 시간 ...). Write Hangul yourself where that default
+  is wrong: counts with 번 ("세 번" is automatic only before 반복/씩/더/연속), bit strings ("일영일일", not 1011, which
+  reads as 천십일), and names with digits ("엘씨 쓰리"). Check a line with `python3 scripts/ko_numbers.py "<text>"`.
 - `tts.py` picks Supertonic 3 automatically for non-English `lang` (first run downloads the model into the tools folder).
 - `claims.json` quotes stay verbatim in the document's language; claim `text` may be Korean.
 - Rendering needs a Korean font (macOS has Apple SD Gothic Neo; on Linux install Noto Sans CJK).
