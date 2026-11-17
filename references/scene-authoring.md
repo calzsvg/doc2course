@@ -19,7 +19,10 @@ export const rig = () => {               // custom 3D scene
 ```
 
 Long videos: keep one file per chapter (`scenes_intro.js`, `scenes_joins.js`, ...) and re-export them from `scenes.js`
-(`export { ch2, ch2_concept } from './scenes_joins.js';`). A factory may be `async` (needed for `pageImage`):
+(`export { ch2, ch2_concept } from './scenes_joins.js';`).
+`p2v scenes` adds the file to `scenes.js` and creates empty chapter files for the ones not written yet;
+`p2v preview --scenes` draws a placeholder for scenes outside its list that have no factory, so one chapter can be
+previewed before the others exist (a full render still needs every factory). A factory may be `async` (needed for `pageImage`):
 `export const slide3 = async () => stack(await pageImage({ page: 3, credit: '...' }), recapList({ ... }));`
 
 Look up signatures with `p2v api` (`p2v api quiz`, `p2v api chart`) instead of reading the engine source.

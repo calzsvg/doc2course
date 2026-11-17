@@ -48,7 +48,8 @@ const finished = new Promise(r => (finish = r));
 let listening;
 const ready = new Promise(r => (listening = r));
 const srv = startServer(port, { onDone: (j, st) => { if (j === job) finish(st); }, onListen: listening });
-const url = `http://127.0.0.1:${await ready}/engine/index.html?job=${encodeURIComponent(job)}`;
+const url = `http://127.0.0.1:${await ready}/engine/index.html?job=${encodeURIComponent(job)}`
+  + (preview && SCENES.length ? `&only=${encodeURIComponent(SCENES.join(','))}` : '');
 
 if (!preview) fs.rmSync(path.join(B, 'frames'), { recursive: true, force: true });
 

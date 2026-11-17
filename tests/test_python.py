@@ -258,6 +258,12 @@ class LectureClaims(unittest.TestCase):
         self.assertIn('WARN 2', out)
 
 
+class SceneBriefHelpers(unittest.TestCase):
+    def test_reexports_listed(self):
+        from scene_brief import helper_exports
+        src = "export { A, head as h } from '/engine/kit.js';\nexport { tag };\nexport * from './x.js';\nexport const foo = 1;\n"
+        self.assertEqual(helper_exports(src), ['foo', 'A', 'h', 'tag', '* from ./x.js'])
+
 class VerifyRounds(unittest.TestCase):
     """scripts/verify_scope.py: round 1 full, later rounds list only open findings and changed scenes."""
     def setUp(self):

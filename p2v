@@ -228,6 +228,14 @@ scenes_cmd() {
   [ -n "$scenes" ] && [ -n "$file" ] || { echo "usage: p2v scenes <job> --scenes a,b,c --file scenes_<chapter>.js [--agent claude|codex] [--brief]"; exit 2; }
   local J="$P2V_JOBS/$job" sb
   sb=$("$PY" "$ROOT/scripts/scene_brief.py" "$job" --scenes "$scenes" --file "$file") || exit 1
+  # So this writer can preview before the other chapters exist: scenes.js re-exports this file, and every chapter file
+  # it imports exists (empty until its writer fills it; preview --scenes draws placeholders for scenes without a factory).
+  [ -f "$J/scenes.js" ] || printf '// One file per chapter (written by p2v scenes), re-exported here.\n' > "$J/scenes.js"
+  grep -q "from './$file'" "$J/scenes.js" || printf "export * from './%s';\n" "$file" >> "$J/scenes.js"
+  local f
+  for f in $(grep -oE "from '\./[A-Za-z0-9_.-]+\.js'" "$J/scenes.js" | sed -E "s/from '\.\/(.*)'/\1/"); do
+    [ -f "$J/$f" ] || printf '// Not written yet: p2v scenes fills this chapter.\nexport {};\n' > "$J/$f"
+  done
   local prompt="You write the scene code for one chapter of the doc2course job in $J. Other chapters are written separately.
 Read: $sb (sentences, timing, claims and BRIEF lines for your scenes), $ROOT/references/scene-authoring.md, and the job's helper files it names. Get the engine API from '$ROOT/p2v api' (or '$ROOT/p2v api <word>'); do not read the engine source.
 Look only at the page images the brief cites (paper/pages/p-NNN.jpg) when a scene redraws a figure.

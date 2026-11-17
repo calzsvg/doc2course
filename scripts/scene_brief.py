@@ -12,6 +12,15 @@ import argparse, json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from p2v_paths import JOBS  # noqa: E402
 
+def helper_exports(src):
+    """Names a job helper file exports: its own definitions and re-exports (`export { a, b as c } from '...'`,
+    `export * from '...'` shown as `* from ...`)."""
+    names = re.findall(r'^export\s+(?:const|let|var|class|function\*?|async\s+function)\s+(\w+)', src, re.M)
+    for block in re.findall(r'^export\s*\{([^}]*)\}', src, re.M):
+        names += [p.split(' as ')[-1].strip() for p in block.split(',') if p.strip()]
+    names += [f'* from {m}' for m in re.findall(r'^export\s*\*\s*from\s*[\'"]([^\'"]+)', src, re.M)]
+    return list(dict.fromkeys(names))
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('job'); ap.add_argument('--scenes', required=True); ap.add_argument('--file', required=True)
@@ -37,7 +46,7 @@ def main():
     shared = []
     for f in sorted(os.listdir(J)):
         if f.endswith('.js') and f != a.file and not f.startswith('scenes'):
-            names = re.findall(r'^export\s+(?:const|let|function|async\s+function)\s+(\w+)', open(os.path.join(J, f), encoding='utf-8').read(), re.M)
+            names = helper_exports(open(os.path.join(J, f), encoding='utf-8').read())
             if names: shared.append(f'- ./{f}: {", ".join(names)}')
     if shared: out += ['## Job helpers you can import (do not edit these files)', *shared, '']
     for i in ids:

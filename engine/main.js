@@ -30,8 +30,15 @@ window.onscreenText = () => [...SEEN].map(([text, scene]) => ({ text, scene }));
 const out = document.getElementById('out'); out.width = W; out.height = H;
 const ctx = out.getContext('2d');
 const built = {};
+// &only=a,b (partial preview): scenes outside that list without a factory yet (chapters still being written) get a
+// placeholder, so one chapter can be previewed before the others exist. A full render still needs every factory.
+const ONLY = (params.get('only') || '').split(',').filter(Boolean);
+const placeholder = id => ({ draw(ctx) {   // not recorded as on-screen text (scene ids may hold digits)
+  const rec = REC; REC = false; txt(ctx, `${id}: not written yet`, W / 2, H / 2, { size: 40, align: 'center', color: C.gray }); REC = rec;
+} });
 for (const s of TIMING) {
-  const f = factories[s.id];
+  let f = factories[s.id];
+  if (typeof f !== 'function' && ONLY.length && !ONLY.includes(s.id)) f = () => placeholder(s.id);
   if (typeof f !== 'function') throw new Error(`scenes.js has no factory for scene "${s.id}"`);
   built[s.id] = await f();   // a factory may be async (e.g. pageImage preloads its picture so every frame is deterministic)
 }
@@ -95,7 +102,7 @@ export function renderAt(T) {
   subtitle(sc, t);
   rrect(ctx, 0, H - 6, Math.round(W * T / TOTAL), 6, 0, C.green, null, 0, .9);   // whole pixels: an anti-aliased tip can differ by render order
   if (CHAPTERS.length > 1) {
-    for (const c of CHAPTERS.slice(1)) rrect(ctx, Math.round(W * c.start / TOTAL) - 1, H - 12, 3, 12, 0, '#ffffff', null, 0, .55);
+    for (const c of CHAPTERS.slice(1)) rrect(ctx, Math.round(W * c.start / TOTAL) - 1, H - 6, 3, 6, 0, '#ffffff', null, 0, .55);
     let cur = null; for (const c of CHAPTERS) if (T >= c.start) cur = c;
     if (cur && cur.first !== sc.id && STYLE.chapterHeading !== false)
       txt(ctx, cur.title, W - 60, 52, { size: 22, weight: 700, align: 'right', color: C.gray, alpha: .9 * eo(seg(t, .2, .7)), maxW: 760 });
