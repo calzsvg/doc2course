@@ -258,6 +258,43 @@ class LectureClaims(unittest.TestCase):
         self.assertIn('WARN 2', out)
 
 
+class VerifyRounds(unittest.TestCase):
+    """scripts/verify_scope.py: round 1 full, later rounds list only open findings and changed scenes."""
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(); self.J = os.path.join(self.tmp, 'vj'); os.makedirs(self.J)
+        self.env = {**os.environ, 'P2V_JOBS': self.tmp}
+        self.write('script.json', {'lang': 'ko', 'scenes': [{'id': 'a', 's': [['가', '가']]}, {'id': 'b', 's': [['나', '나']]},
+                                                           {'id': 'c', 's': [['다', '다']]}]})
+        self.write('claims.json', {'claims': [{'id': 'k1', 'kind': 'background', 'text': 'x', 'used_in': ['b.0']}]})
+        open(os.path.join(self.J, 'common.js'), 'w').write("import { C } from '/engine/core.js';\nexport function helper() { return 1; }\n")
+        open(os.path.join(self.J, 'scenes.js'), 'w').write(
+            "import { helper } from './common.js';\nexport const a = () => ({ draw() {} });\n"
+            "export const b = () => ({ draw() {} });\nexport const c = () => ({ draw() { helper(); } });\n")
+    def tearDown(self): shutil.rmtree(self.tmp)
+    def write(self, name, obj): json.dump(obj, open(os.path.join(self.J, name), 'w'), ensure_ascii=False)
+    def run_scope(self):
+        r = subprocess.run([sys.executable, os.path.join(ROOT, 'scripts', 'verify_scope.py'), 'vj'], capture_output=True, text=True, env=self.env)
+        self.assertEqual(r.returncode, 0, r.stderr); return json.loads(r.stdout)
+    def report(self, rows):
+        open(os.path.join(self.J, 'VERIFY.md'), 'w').write('| claim | layer | verdict | note | fix |\n|---|---|---|---|---|\n' + rows + '\noverall: FIX-AND-RERUN\n')
+
+    def test_rounds(self):
+        d = self.run_scope(); self.assertEqual((d['round'], d['mode']), (1, 'full'))
+        self.assertEqual(self.run_scope()['mode'], 'full')            # no finished report yet: still a full check
+        self.report('| k1 | 2 | ok | fine | - |\n| a.0 | 4 | wrong | overflow | shrink |\n')
+        d = self.run_scope(); self.assertEqual((d['mode'], d['changed_scenes']), ('recheck', []))
+        delta = open(os.path.join(self.J, d['delta'])).read()
+        self.assertIn('| a.0 | 4 | wrong', delta); self.assertNotIn('| k1 | 2 | ok', delta)
+        c = json.load(open(os.path.join(self.J, 'claims.json'))); c['claims'][0]['text'] = 'y'; self.write('claims.json', c)
+        self.assertEqual(self.run_scope()['changed_scenes'], ['b'])   # scene that uses the changed claim
+        src = open(os.path.join(self.J, 'common.js')).read().replace('return 1', 'return 2')
+        open(os.path.join(self.J, 'common.js'), 'w').write(src)
+        self.assertEqual(self.run_scope()['changed_scenes'], ['c'])   # scene that calls the changed helper
+        src = open(os.path.join(self.J, 'scenes.js')).read().replace("export const a = () => ({ draw() {} });", "export const a = () => ({ draw() { 1; } });")
+        open(os.path.join(self.J, 'scenes.js'), 'w').write(src)
+        self.assertEqual(self.run_scope()['changed_scenes'], ['a'])   # only the edited factory, not the whole file
+
+
 class Cli(unittest.TestCase):
     def p2v(self, *args):
         env = {k: v for k, v in os.environ.items() if not k.startswith('P2V_')}

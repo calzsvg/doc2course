@@ -96,17 +96,25 @@ if (preview) {
   const known = await page.evaluate(() => window.TIMING.map(s => s.id));
   const unknown = SCENES.filter(id => !known.includes(id));
   if (unknown.length) bail(`--scenes: no such scene(s) ${unknown.join(', ')}`, 2);
-  const T = await page.evaluate(ids => window.TIMING.filter(s => !ids.length || ids.includes(s.id))
-    .flatMap(s => s.sents.map(x => s.start + x.start + x.dur * 0.75)), SCENES);
+  const shots = await page.evaluate(ids => window.TIMING.filter(s => !ids.length || ids.includes(s.id))
+    .flatMap(s => s.sents.map(x => [s.id, s.start + x.start + x.dur * 0.75])), SCENES);
+  const T = shots.map(x => x[1]);
   fs.mkdirSync(B, { recursive: true });
   const prefix = SCENES.length ? `preview_${SCENES[0]}_` : 'preview_';
   if (!SCENES.length) for (const f of fs.readdirSync(B)) if (/^preview_.*\.jpg$/.test(f)) fs.rmSync(path.join(B, f));
+  const index = {};
   for (let i = 0; i < T.length; i += 8) {
     const data = await page.evaluate(ts => window.sheet(ts, 2, 960), T.slice(i, i + 8));
     const f = path.join(B, `${prefix}${String(i / 8 + 1).padStart(2, '0')}.jpg`);
     fs.writeFileSync(f, Buffer.from(data.split(',')[1], 'base64'));
+    index[path.basename(f)] = [...new Set(shots.slice(i, i + 8).map(x => x[0]))];
     console.log('wrote', f);
   }
+  // Which scenes each sheet shows, so a re-check only opens the sheets of changed scenes (`p2v verify`).
+  const idxFile = path.join(B, 'preview_index.json');
+  let prev = {}; try { if (SCENES.length) prev = JSON.parse(fs.readFileSync(idxFile, 'utf8')); } catch { prev = {}; }
+  for (const k of Object.keys(prev)) if (k.startsWith(prefix)) delete prev[k];
+  fs.writeFileSync(idxFile, JSON.stringify({ ...prev, ...index }, null, 1));
   // On-screen text audit for check_claims.py (every 3rd frame, no encoding).
   const items = await page.evaluate(() => window.scanText(3));
   fs.writeFileSync(path.join(B, 'onscreen.json'), JSON.stringify({ mode: 'scan', at: new Date().toISOString(), items }, null, 1));

@@ -91,15 +91,31 @@ part again instead of trimming it. Say in the report how the deck was split.
 | 3 | Script | `script.json`: scenes → sentences `[subtitle, tts_text]`; `"chapter"` on the first scene of each chapter; `"pauses"` for quiz thinking time. Long videos: write and check one chapter at a time |
 | 4 | Claims | `claims.json`: every factual statement and every on-screen number, with source; `used_in` lists every sentence (`<scene id>.<index>`) that says or shows it |
 | 5 | Mechanical check (script) | `p2v check <id>` → must be **FAIL 0, WARN 0** for subtitles, narration and claims (scene numbers are checked again in step 8) |
-| 6 | Scenes | `scenes.js` (templates + custom). Long videos: one file per chapter (`scenes_<chapter>.js`) re-exported from `scenes.js`. See `references/scene-authoring.md` |
+| 6 | Scenes | `scenes.js` (templates + custom). Get the engine API from `p2v api` (not the engine source); shared helpers (`A`, `head`, `box`, `mono`, `sideText`, `line`, `bitRow`, `aluShape`, `memCol`) come from `/engine/kit.js`. Long videos: one file per chapter (`scenes_<chapter>.js`) re-exported from `scenes.js`, each written in a **fresh context** (see **Context budget**). See `references/scene-authoring.md` |
 | 7 | Narration + timing | `p2v tts <id>` → `build/narration.wav`, `build/timing.json` (sentences are cached: re-runs only synthesize changed sentences) |
 | 8 | Preview QA + check | `p2v preview <id>` (long videos: `p2v preview <id> --scenes a,b,c` per chapter while working, one full preview at the end) → `build/preview_*.jpg` and `build/onscreen.json`. Look at every sheet (overflow, overlap, blank, legibility, camera inside geometry), then `p2v check <id>` again: FAIL 0, WARN 0 now includes numbers drawn by scenes |
-| 9 | Independent verification | A verifier with **fresh context** per `references/verification.md` → `<jobs>/<id>/VERIFY.md`. Claude Code: a subagent (Task/Agent tool) that sees only the files listed there. Codex or any agent without subagents: `p2v verify <id>` (starts a separate `claude -p` / `codex exec` process; needs network approval in Codex's sandbox). Long videos: one verifier per chapter (`p2v verify <id> --scenes ...` or parallel subagents), then merge into VERIFY.md. Fix and loop (re-run 5-8 for what changed) until it passes. Only a PASS goes to render |
+| 9 | Independent verification | A verifier with **fresh context** per `references/verification.md` → `<jobs>/<id>/VERIFY.md`. Claude Code: a subagent (Task/Agent tool) that sees only the files listed there. Codex or any agent without subagents: `p2v verify <id>` (starts a separate `claude -p` / `codex exec` process; needs network approval in Codex's sandbox). Long videos: one verifier per chapter (`p2v verify <id> --scenes ...` or parallel subagents), then merge into VERIFY.md. Fix and loop (re-run 5-8 for what changed) until it passes. Rounds after the first are **re-checks**: `p2v verify` (or `p2v verify <id> --brief`, the prompt for a verifier subagent) passes only the open findings and the changed scenes (`references/verification.md`, Re-check rounds). Only a PASS goes to render |
 | 10 | Render | `p2v render <id>` → the finished MP4 (a hard link to `build/<id>.mp4`): for a **local PDF, next to that PDF** as `<pdf name> - <script title>.mp4` (+ `.chapters.txt`); for arXiv and PDF links in the videos folder as `<id>_<Short-Title>[_ko].mp4`. Also `build/contact.jpg` and `build/chapters.txt` (chapters are embedded in the MP4). A user-set `P2V_OUT` sends every video there; `P2V_NEXT_TO_SOURCE=0` turns the next-to-PDF rule off; an unwritable PDF folder falls back to the videos folder. No Playwright: `render <id> --manual`, open the URL in any browser |
 | 11 | Final checks | `p2v check <id>` once more (the render records every frame's text, so it sees more than the preview). Must be FAIL 0, WARN 0. Look at `contact.jpg` |
 | 12 | Report | Final report (below). If `local/*.md` exists in the skill folder, follow those personal add-on steps after this one |
 
 Re-runs: steps 7, 8, 10, 11 are idempotent. Change `script.json` → re-run 5, 7, 8, then re-verify the changed claims (9) and render.
+
+## Context budget
+Every turn re-reads the whole conversation, so a long single context is the main cost of a video (a 15-minute part
+used to grow past 400k tokens). Keep contexts small:
+- **Narration before scenes.** Once the script passes `p2v check` (step 5), run `p2v tts` (step 7) so scene work can
+  preview with real timing.
+- **One chapter per fresh context.** For videos with chapters, write each `scenes_<chapter>.js` in a new context:
+  Claude Code: a subagent per chapter given the output of `p2v scenes <id> --scenes a,b,c --file scenes_<chapter>.js --brief`;
+  anywhere else (or when you are a subagent yourself): `p2v scenes <id> --scenes ... --file ...` (a separate agent process).
+  Run chapters one after another when they share helper files. Write shared helpers (`common.js`) once, before the
+  chapters, and keep their exports stable. You keep the outline, script, claims and the final checks.
+- **Read less.** `p2v api [word]` instead of `engine/*.js`; `grep` and `sed -n` ranges instead of `cat` on long files;
+  never read another job's files to learn the engine.
+- **Look once.** Open each preview sheet once. After a fix, `p2v preview <id> --scenes <changed>` and open only the
+  new sheets. Render only after the verifier's PASS.
+- **Re-check, do not re-verify.** Verification rounds after the first cover open findings and changed scenes only.
 
 ## Teaching structure (lecture, standard and deep modes)
 Read `references/long-form.md` before writing a script longer than `short`. In brief:

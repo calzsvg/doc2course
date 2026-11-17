@@ -9,7 +9,11 @@
 #   p2v tts <job> [opts]      narration + timing (opts: --engine, --voice, --speed, --no-cache)
 #   p2v preview <job> [--scenes a,b]   contact sheets at every sentence midpoint (optionally only some scenes)
 #   p2v render <job> [--manual|--allow-stale] [--workers N] [--gpu auto|cpu|metal|vulkan|egl] [--gpu-device D]
-#   p2v verify <job> [--agent claude|codex] [--scenes a,b]   independent verifier in a fresh agent process -> VERIFY*.md
+#   p2v scenes <job> --scenes a,b --file scenes_x.js [--brief]   one chapter's scene code in a fresh agent (small context)
+#   p2v api [words]           compact engine reference (signatures + comments; read this, not the engine source)
+#   p2v verify <job> [--agent claude|codex] [--scenes a,b] [--full] [--brief]   independent verifier in a fresh agent process -> VERIFY*.md
+#                             round 1 checks everything; later rounds re-check open findings + changed scenes only;
+#                             --brief prints the verifier prompt for a subagent instead of starting a process
 #   p2v gpus                  GPUs the renderer can use (pick one with --gpu-device or P2V_GPU_DEVICE)
 #   p2v collect               re-link every finished video into the videos folder
 #   p2v smoke [--ko]          end-to-end toolchain test
@@ -19,7 +23,7 @@
 #
 # Folders (details in scripts/p2v_paths.py): code stays in the skill folder, tools in P2V_TOOLS,
 # jobs and videos in P2V_HOME (~/doc2course for installed copies). All four can be overridden by env vars.
-# Agents: P2V_AGENT (claude|codex) picks the CLI for verify/run; P2V_CODEX_ARGS overrides the codex exec flags
+# Agents: P2V_AGENT (claude|codex) picks the CLI for verify/scenes/run; P2V_CODEX_ARGS overrides the codex exec flags
 # (default: --full-auto --skip-git-repo-check).
 set -euo pipefail
 # Logical path (symlinked skill folders keep their ~/.claude/skills/... spelling, which is what permission rules see).
@@ -175,24 +179,67 @@ agent_exec() {
 
 verify() {
   need_tools
-  local agent="" scenes="" job=""
+  local agent="" scenes="" job="" full="" brief=""
   while [ $# -gt 0 ]; do case "$1" in
-    --agent) agent="${2:-}"; shift 2 ;; --scenes) scenes="${2:-}"; shift 2 ;; *) job="$1"; shift ;; esac; done
+    --agent) agent="${2:-}"; shift 2 ;; --scenes) scenes="${2:-}"; shift 2 ;; --full) full=--full; shift ;;
+    --brief) brief=1; shift ;; *) job="$1"; shift ;; esac; done
   need_job "$job"
-  [ -n "$agent" ] && export P2V_AGENT="$agent"
-  agent=$(pick_agent) || exit 1
-  local J="$P2V_JOBS/$job" out="VERIFY.md" scope="the whole video"
-  if [ -n "$scenes" ]; then out="VERIFY_${scenes%%,*}.md"; scope="only these scenes of script.json: $scenes (one part of a long video)"; fi
+  local J="$P2V_JOBS/$job" scope="the whole video"
+  [ -n "$scenes" ] && scope="only these scenes of script.json: $scenes (one part of a long video)"
   "$PY" "$ROOT/scripts/check_claims.py" "$job" >/dev/null || true   # fresh build/VERIFY_auto.md for the verifier
-  mkdir -p "$P2V_HOME/logs"
-  local prompt="You are the independent verifier for the doc2course job in $J. You did not write it; judge it.
+  # Round 1 is a full check; later rounds re-check only open findings and what changed (scripts/verify_scope.py).
+  local info; info=$("$PY" "$ROOT/scripts/verify_scope.py" "$job" ${scenes:+--scenes "$scenes"} $full) || exit 1
+  local get="import json,sys; d=json.loads(sys.argv[1]); print(d[sys.argv[2]] or '')"
+  local round mode out delta prev
+  round=$("$SYSPY" -c "$get" "$info" round); mode=$("$SYSPY" -c "$get" "$info" mode); out=$("$SYSPY" -c "$get" "$info" out)
+  delta=$("$SYSPY" -c "$get" "$info" delta); prev=$("$SYSPY" -c "$get" "$info" previous)
+  local prompt
+  if [ "$mode" = full ]; then
+    prompt="You are the independent verifier for the doc2course job in $J. You did not write it; judge it.
 Follow $ROOT/references/verification.md exactly (all layers that apply to the document type in paper/meta.json).
 Scope: $scope.
 Read only: paper/paper.txt, paper/transcribed.txt (if present), paper/meta.json, paper/pages/*.jpg (to check transcriptions and slide content), script.json, claims.json, BRIEF.md, the job's .js scene files, build/VERIFY_auto.md, build/onscreen.json and build/preview_*.jpg (look at the images).
 You may run: $ROOT/p2v check $job
-Write your report to $J/$out in the format given in verification.md, ending with 'overall: PASS', 'overall: FIX-AND-RERUN' or 'overall: BLOCKED'. Do not edit any other file."
-  echo "verifier: $agent, job $job, scope: $scope -> $J/$out"
-  agent_exec "$agent" "$J" "$prompt" "$P2V_HOME/logs/verify_${job}.log"
+Write your report to $J/$out in the format given in verification.md, starting with 'round: 1 (full)' and ending with 'overall: PASS', 'overall: FIX-AND-RERUN' or 'overall: BLOCKED'. Do not edit any other file."
+  else
+    prompt="You are the independent verifier for the doc2course job in $J (re-check, round $round). You did not write it; judge it.
+Follow $ROOT/references/verification.md, section 'Re-check rounds'. Scope: $scope.
+Start with $J/$delta: it lists the open findings of round $((round - 1)), the scenes that changed since then (with their script sentences and claims) and the preview sheets that show them.
+Re-check each open finding and every changed scene with all layers that apply (find source passages with grep in paper/paper.txt and open only the cited paper/pages/*.jpg; open only the listed build/preview_*.jpg). Do not re-verify scenes that did not change. An open finding about a scene that is not in the delta was not fixed: look that scene up in script.json / claims.json with grep and keep or update its row.
+You may run: $ROOT/p2v check $job (it must be FAIL 0 WARN 0).
+$J/$out is the previous report ($prev): edit it in place. Set the first line to 'round: $round (re-check)', update the rows you re-checked (fixed -> 'ok (fixed in round $round)'), add rows for new findings, keep the other rows as they are, and end with the new 'overall: PASS', 'overall: FIX-AND-RERUN' or 'overall: BLOCKED'. Do not edit any other file."
+  fi
+  if [ "$round" -gt 4 ]; then echo "p2v: round $round. SKILL.md allows 3 fix rounds: report BLOCKED with the open items instead of looping" >&2; fi
+  echo "verify round $round ($mode), job $job, scope: $scope -> $J/$out${delta:+  (delta: $J/$delta)}"
+  if [ -n "$brief" ]; then printf '%s\n' "$prompt"; return 0; fi   # brief for a verifier subagent (Claude Code)
+  [ -n "$agent" ] && export P2V_AGENT="$agent"
+  agent=$(pick_agent) || exit 1
+  mkdir -p "$P2V_HOME/logs"
+  agent_exec "$agent" "$J" "$prompt" "$P2V_HOME/logs/verify_${job}.r${round}.log"
+}
+
+scenes_cmd() {
+  need_tools
+  local agent="" scenes="" job="" file="" brief=""
+  while [ $# -gt 0 ]; do case "$1" in
+    --agent) agent="${2:-}"; shift 2 ;; --scenes) scenes="${2:-}"; shift 2 ;; --file) file="${2:-}"; shift 2 ;;
+    --brief) brief=1; shift ;; *) job="$1"; shift ;; esac; done
+  need_job "$job"
+  [ -n "$scenes" ] && [ -n "$file" ] || { echo "usage: p2v scenes <job> --scenes a,b,c --file scenes_<chapter>.js [--agent claude|codex] [--brief]"; exit 2; }
+  local J="$P2V_JOBS/$job" sb
+  sb=$("$PY" "$ROOT/scripts/scene_brief.py" "$job" --scenes "$scenes" --file "$file") || exit 1
+  local prompt="You write the scene code for one chapter of the doc2course job in $J. Other chapters are written separately.
+Read: $sb (sentences, timing, claims and BRIEF lines for your scenes), $ROOT/references/scene-authoring.md, and the job's helper files it names. Get the engine API from '$ROOT/p2v api' (or '$ROOT/p2v api <word>'); do not read the engine source.
+Look only at the page images the brief cites (paper/pages/p-NNN.jpg) when a scene redraws a figure.
+Write $J/$file with one exported factory per scene: $scenes. Import shared helpers from /engine/kit.js and the job's helper files; put helpers only this chapter needs in $file. Do not edit any other file; if a shared helper must change, say so in your answer.
+Then run '$ROOT/p2v preview $job --scenes $scenes', open each sheet it wrote once, fix overflow, overlap, blank frames and text under the subtitle band, and re-preview only the scenes you changed. Run '$ROOT/p2v check $job' and fix numbers your scenes draw that it reports.
+Answer in a few lines: scenes written, anything left open."
+  if [ -n "$brief" ]; then printf '%s\n' "$prompt"; return 0; fi
+  [ -n "$agent" ] && export P2V_AGENT="$agent"
+  agent=$(pick_agent) || exit 1
+  mkdir -p "$P2V_HOME/logs"
+  echo "scene writer: $agent, job $job, $file <- $scenes"
+  agent_exec "$agent" "$J" "$prompt" "$P2V_HOME/logs/scenes_${job}_${file%.js}.log"
 }
 
 run_unattended() {
@@ -229,12 +276,14 @@ case "$CMD" in
   tts)     need_job "${1:-}"; need_tools; exec "$PY" "$ROOT/scripts/tts.py" "$@" ;;
   preview) need_job "${1:-}"; need_tools; exec node "$ROOT/scripts/render.mjs" "$@" --preview ;;
   render)  need_job "${1:-}"; need_tools; exec node "$ROOT/scripts/render.mjs" "$@" ;;
+  scenes)  scenes_cmd "$@" ;;
+  api)     exec "$SYSPY" "$ROOT/scripts/api.py" "$@" ;;
   verify)  verify "$@" ;;
   collect) exec node "$ROOT/scripts/collect.mjs" ;;
   gpus)    exec node -e 'import(process.argv[1]).then(m => console.log(m.formatGpus()))' "$ROOT/scripts/gpu.mjs" ;;
   smoke)   smoke "${1:-}" ;;
   test)    "$SYSPY" "$ROOT/tests/test_python.py" && node "$ROOT/tests/test_server.mjs" ;;
   run)     run_unattended "$@" ;;
-  help|-h|--help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//' ;;
+  help|-h|--help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) echo "p2v: unknown command '$CMD' (try: p2v help)"; exit 2 ;;
 esac

@@ -95,3 +95,18 @@ overall: PASS | FIX-AND-RERUN | BLOCKED (needs user)
 ```
 Loop: fix → re-run layer 1 → re-verify changed claims. Stop after 3 loops and report BLOCKED with
 the open items. Only a PASS goes to the final render.
+
+## Re-check rounds (round 2 and later)
+Round 1 checks everything. A re-check does not start over: `p2v verify <id>` (or `p2v verify <id> --brief` for a verifier
+subagent) works out what changed since the last round (`scripts/verify_scope.py`), archives the previous report to
+`build/verify_rounds/`, and writes `build/verify_delta.md` with:
+- the previous round's findings that were not `ok`
+- the scenes that changed (script entry, a claim they use, their own scene code, or a helper/import they depend on),
+  with their sentences and claims
+- the preview sheets that show those scenes (`build/preview_index.json`, written by `p2v preview`)
+
+The verifier re-checks every open finding and every changed scene with all layers that apply, reads source passages
+with grep and opens only the cited page images and the listed preview sheets, and edits the previous report in place
+(fixed rows become `ok (fixed in round N)`; unchanged rows stay). `--full` forces a full round (use it when the
+outline, chapter order or many scenes changed, since Layer 3 flow is only checked in full). The rounds are counted
+per job: after round 4 (one full check and three re-checks) `p2v verify` warns, and the run stops with BLOCKED.

@@ -22,6 +22,12 @@ Long videos: keep one file per chapter (`scenes_intro.js`, `scenes_joins.js`, ..
 (`export { ch2, ch2_concept } from './scenes_joins.js';`). A factory may be `async` (needed for `pageImage`):
 `export const slide3 = async () => stack(await pageImage({ page: 3, credit: '...' }), recapList({ ... }));`
 
+Look up signatures with `p2v api` (`p2v api quiz`, `p2v api chart`) instead of reading the engine source.
+Common drawing helpers are in `/engine/kit.js`: `A(S, k)` (reveal of sentence k), `head` (slide heading), `box`,
+`mono`, `sideText` (wrapped text column revealed per sentence), `line` (polyline with arrowhead, drawn by `prog`),
+and for computer architecture `aluShape`, `bitRow` (instruction fields; its bit numbers are on-screen numbers),
+`memCol`. Import them; do not copy them into the job's `common.js`.
+
 ## Timing model
 - `S.t` seconds into the scene, `S.dur` scene length.
 - `S.P(k, a=0, b=1)` progress 0→1 across sentence k's window, optionally a sub-range [a, b].
