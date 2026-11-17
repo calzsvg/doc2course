@@ -1,10 +1,10 @@
 ---
 name: doc2course
-description: Turn a document (arXiv paper, lecture slides, handout, report: any PDF) into a narrated, fact-checked explainer video (1080p MP4) with animated 2D/3D scenes, subtitles, chapters and a verification report. Run with /doc2course (Claude Code) or $doc2course (Codex) followed by <arxiv link | path to PDF | PDF link> [overrides].
+description: Turn a document (arXiv paper, lecture slides, handout, report: any PDF) into a narrated, fact-checked explainer video (1080p MP4) with animated 2D/3D scenes, subtitles, chapters and a verification report. Run with /doc2course (Claude Code) followed by <arxiv link | path to PDF | PDF link> [overrides].
 argument-hint: <arxiv link | file.pdf | pdf link> [overrides]
 disable-model-invocation: true
 license: MIT
-compatibility: Claude Code or Codex with a local shell. Needs Node 18+, Python 3.10-3.13, ~1 GB disk (voice model + headless Chromium). Tools install on first run.
+compatibility: Claude Code with a local shell. Needs Node 18+, Python 3.10-3.13, ~1 GB disk (voice model + headless Chromium). Tools install on first run.
 allowed-tools: Bash(${CLAUDE_SKILL_DIR}/p2v *)
 ---
 
@@ -17,14 +17,10 @@ Input: **$ARGUMENTS**
 (If that line still shows a literal `$ARGUMENTS`, your agent did not substitute it: the input is what the user wrote
 after the skill name.)
 
-## Running commands (Claude Code and Codex)
+## Running commands
 Every step runs through one command: `${CLAUDE_SKILL_DIR}/p2v <subcommand>` (works from any directory).
-- **Claude Code** replaces `${CLAUDE_SKILL_DIR}` with the skill folder. Type that full path exactly as written here,
+- Claude Code replaces `${CLAUDE_SKILL_DIR}` with the skill folder. Type that full path exactly as written here,
   not a shell variable or `cd` + `./p2v`: the pre-approved permission matches this exact command.
-- **Codex and other agents**: if `${CLAUDE_SKILL_DIR}` was not replaced, it means the folder that contains this
-  SKILL.md. Use its absolute path everywhere below (e.g. `~/.codex/skills/doc2course/p2v doctor`).
-  Codex's default sandbox has no network: `p2v setup` and `p2v fetch` of a link need it, so request approval to run
-  them outside the sandbox (or the user runs them once). Everything after fetch works offline.
 
 1. Run `p2v doctor`. It prints the folders (skill, tools, jobs, videos). If it ends with `-> run: ... setup`,
    tell the user "first run: installing tools (~1 GB, a few minutes)" and run `p2v setup` once with the longest
@@ -94,7 +90,7 @@ part again instead of trimming it. Say in the report how the deck was split.
 | 6 | Scenes | `scenes.js` (templates + custom). Get the engine API from `p2v api` (not the engine source); shared helpers (`A`, `head`, `box`, `mono`, `sideText`, `line`, `bitRow`, `aluShape`, `memCol`) come from `/engine/kit.js`. Long videos: one file per chapter (`scenes_<chapter>.js`) re-exported from `scenes.js`, each written in a **fresh context** (see **Context budget**). See `references/scene-authoring.md` |
 | 7 | Narration + timing | `p2v tts <id>` → `build/narration.wav`, `build/timing.json` (sentences are cached: re-runs only synthesize changed sentences) |
 | 8 | Preview QA + check | `p2v preview <id>` (long videos: `p2v preview <id> --scenes a,b,c` per chapter while working, one full preview at the end) → `build/preview_*.jpg` and `build/onscreen.json`. Look at every sheet (overflow, overlap, blank, legibility, camera inside geometry), then `p2v check <id>` again: FAIL 0, WARN 0 now includes numbers drawn by scenes |
-| 9 | Independent verification | A verifier with **fresh context** per `references/verification.md` → `<jobs>/<id>/VERIFY.md`. Claude Code: a subagent (Task/Agent tool) that sees only the files listed there. Codex or any agent without subagents: `p2v verify <id>` (starts a separate `claude -p` / `codex exec` process; needs network approval in Codex's sandbox). Long videos: one verifier per chapter (`p2v verify <id> --scenes ...` or parallel subagents), then merge into VERIFY.md. Fix and loop (re-run 5-8 for what changed) until it passes. Rounds after the first are **re-checks**: `p2v verify` (or `p2v verify <id> --brief`, the prompt for a verifier subagent) passes only the open findings and the changed scenes (`references/verification.md`, Re-check rounds). Only a PASS goes to render |
+| 9 | Independent verification | A verifier with **fresh context** per `references/verification.md` → `<jobs>/<id>/VERIFY.md`. Claude Code: a subagent (Task/Agent tool) that sees only the files listed there. When you are a subagent yourself: `p2v verify <id>` (starts a separate `claude -p` process). Long videos: one verifier per chapter (`p2v verify <id> --scenes ...` or parallel subagents), then merge into VERIFY.md. Fix and loop (re-run 5-8 for what changed) until it passes. Rounds after the first are **re-checks**: `p2v verify` (or `p2v verify <id> --brief`, the prompt for a verifier subagent) passes only the open findings and the changed scenes (`references/verification.md`, Re-check rounds). Only a PASS goes to render |
 | 10 | Render | `p2v render <id>` → the finished MP4 (a hard link to `build/<id>.mp4`): for a **local PDF, next to that PDF** as `<pdf name> - <script title>.mp4` (+ `.chapters.txt`); for arXiv and PDF links in the videos folder as `<id>_<Short-Title>[_ko].mp4`. Also `build/contact.jpg` and `build/chapters.txt` (chapters are embedded in the MP4). A user-set `P2V_OUT` sends every video there; `P2V_NEXT_TO_SOURCE=0` turns the next-to-PDF rule off; an unwritable PDF folder falls back to the videos folder. No Playwright: `render <id> --manual`, open the URL in any browser |
 | 11 | Final checks | `p2v check <id>` once more (the render records every frame's text, so it sees more than the preview). Must be FAIL 0, WARN 0. Look at `contact.jpg` |
 | 12 | Report | Final report (below). If `local/*.md` exists in the skill folder, follow those personal add-on steps after this one |
@@ -107,8 +103,8 @@ used to grow past 400k tokens). Keep contexts small:
 - **Narration before scenes.** Once the script passes `p2v check` (step 5), run `p2v tts` (step 7) so scene work can
   preview with real timing.
 - **One chapter per fresh context.** For videos with chapters, write each `scenes_<chapter>.js` in a new context:
-  Claude Code: a subagent per chapter given the output of `p2v scenes <id> --scenes a,b,c --file scenes_<chapter>.js --brief`;
-  anywhere else (or when you are a subagent yourself): `p2v scenes <id> --scenes ... --file ...` (a separate agent process).
+  a subagent per chapter given the output of `p2v scenes <id> --scenes a,b,c --file scenes_<chapter>.js --brief`;
+  when you are a subagent yourself: `p2v scenes <id> --scenes ... --file ...` (a separate `claude -p` process).
   Run chapters one after another when they share helper files. Write shared helpers (`common.js`) once, before the
   chapters, and keep their exports stable. You keep the outline, script, claims and the final checks.
 - **Read less.** `p2v api [word]` instead of `engine/*.js`; `grep` and `sed -n` ranges instead of `cat` on long files;

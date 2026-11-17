@@ -7,7 +7,7 @@
            otherwise       ROOT/.tools/                                     (git-ignored, survives git pull)
   WORK   jobs/ and videos/
            ROOT inside an agent's home (installed skill)                    ~/doc2course/
-             ~/.claude/ (Claude Code plugin or ~/.claude/skills), ~/.codex/ or $CODEX_HOME (Codex), ~/.agents/
+             ~/.claude/ (Claude Code plugin or ~/.claude/skills)
            otherwise (a development clone)                                  ROOT
   Overrides: P2V_TOOLS, P2V_HOME (work dir), P2V_JOBS, P2V_OUT (videos)
 
@@ -41,8 +41,7 @@ def _env(name, default):
 PLUGIN_ID = _plugin_id()
 TOOLS = _env('P2V_TOOLS', os.path.join(_HOME, '.claude', 'plugins', 'data', PLUGIN_ID) if PLUGIN_ID
              else os.path.join(ROOT, '.tools'))
-AGENT_HOMES = [os.path.join(_HOME, d) for d in ('.claude', '.codex', '.agents')] + \
-              ([os.path.expanduser(os.environ['CODEX_HOME'])] if os.environ.get('CODEX_HOME') else [])
+AGENT_HOMES = [os.path.join(_HOME, '.claude')]
 INSTALLED = any(_under(ROOT, h) for h in AGENT_HOMES)
 WORK = _env('P2V_HOME', os.path.join(_HOME, 'doc2course') if INSTALLED else ROOT)
 JOBS = _env('P2V_JOBS', os.path.join(WORK, 'jobs'))

@@ -11,20 +11,19 @@
 #   p2v render <job> [--manual|--allow-stale] [--workers N] [--gpu auto|cpu|metal|vulkan|egl] [--gpu-device D]
 #   p2v scenes <job> --scenes a,b --file scenes_x.js [--brief]   one chapter's scene code in a fresh agent (small context)
 #   p2v api [words]           compact engine reference (signatures + comments; read this, not the engine source)
-#   p2v verify <job> [--agent claude|codex] [--scenes a,b] [--full] [--brief]   independent verifier in a fresh agent process -> VERIFY*.md
+#   p2v verify <job> [--scenes a,b] [--full] [--brief]   independent verifier in a fresh agent process -> VERIFY*.md
 #                             round 1 checks everything; later rounds re-check open findings + changed scenes only;
 #                             --brief prints the verifier prompt for a subagent instead of starting a process
 #   p2v gpus                  GPUs the renderer can use (pick one with --gpu-device or P2V_GPU_DEVICE)
 #   p2v collect               re-link every finished video into the videos folder
 #   p2v smoke [--ko]          end-to-end toolchain test
 #   p2v test                  fast regression tests (no tools or network needed)
-#   p2v run [--agent claude|codex] <source> [overrides]   unattended run (log in <work>/logs/)
+#   p2v run <source> [overrides]   unattended run (log in <work>/logs/)
 #   p2v paths                 print the resolved folders as export lines
 #
 # Folders (details in scripts/p2v_paths.py): code stays in the skill folder, tools in P2V_TOOLS,
 # jobs and videos in P2V_HOME (~/doc2course for installed copies). All four can be overridden by env vars.
-# Agents: P2V_AGENT (claude|codex) picks the CLI for verify/scenes/run; P2V_CODEX_ARGS overrides the codex exec flags
-# (default: --full-auto --skip-git-repo-check).
+# Agents: verify, scenes and run start fresh Claude Code processes (`claude -p`).
 set -euo pipefail
 # Logical path (symlinked skill folders keep their ~/.claude/skills/... spelling, which is what permission rules see).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -136,7 +135,7 @@ doctor() {
     echo "ffmpeg  missing"; ok=0
   fi
   [ -d "$P2V_TOOLS/node_modules/playwright" ] && echo "render  ok (playwright)" || echo "render  manual only (no playwright)"
-  local a; for a in claude codex; do command -v "$a" >/dev/null && echo "agent   $a ($(command -v "$a"))"; done
+  command -v claude >/dev/null && echo "agent   claude ($(command -v claude))" || echo "agent   claude CLI not on PATH (needed by verify/scenes/run)"
   [ $ok = 1 ] || { echo "-> run: $ROOT/p2v setup"; return 1; }
 }
 
@@ -154,34 +153,24 @@ smoke() {
   echo "ALL PASS -> $P2V_JOBS/_smoke/build/_smoke.mp4"
 }
 
-pick_agent() {   # --agent X, else $P2V_AGENT, else whichever CLI exists (claude first)
-  local a="${P2V_AGENT:-}"
-  if [ -z "$a" ]; then for a in claude codex; do command -v "$a" >/dev/null && break; a=""; done; fi
-  [ -n "$a" ] || { echo "p2v: neither claude nor codex is on PATH (or set P2V_AGENT)" >&2; return 1; }
-  case "$a" in claude|codex) ;; *) echo "p2v: unknown agent '$a' (claude or codex)" >&2; return 1 ;; esac
-  command -v "$a" >/dev/null || { echo "p2v: '$a' CLI not found on PATH" >&2; return 1; }
-  echo "$a"
+need_claude() {
+  command -v claude >/dev/null || { echo "p2v: the claude CLI (Claude Code) is not on PATH" >&2; exit 1; }
 }
 
-# Run a prompt in a fresh agent process (no shared context with the caller). $1 agent, $2 work dir, $3 prompt, $4 log file.
+# Run a prompt in a fresh Claude Code process (no shared context with the caller). $1 work dir, $2 prompt, $3 log file.
 agent_exec() {
-  local agent="$1" dir="$2" prompt="$3" log="$4"
-  if [ "$agent" = claude ]; then
-    (cd "$dir" && claude -p "$prompt" --permission-mode acceptEdits \
-      --allowedTools "Bash($ROOT/p2v *),Bash($(cd "$ROOT" && pwd -P)/p2v *),Bash(ls *),Bash(cat *),Bash(head *),Bash(wc *),Bash(grep *),Read,Write,Edit,Glob,Grep,Task,Agent" \
-      --add-dir "$ROOT" --add-dir "$P2V_HOME" --output-format json > "$log")
-    "$SYSPY" -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('result','')); sys.exit(1 if d.get('is_error') else 0)" "$log"
-  else
-    # shellcheck disable=SC2086
-    (cd "$dir" && codex exec ${P2V_CODEX_ARGS:---full-auto --skip-git-repo-check} -C "$dir" "$prompt" 2>&1 | tee "$log")
-  fi
+  local dir="$1" prompt="$2" log="$3"
+  (cd "$dir" && claude -p "$prompt" --permission-mode acceptEdits \
+    --allowedTools "Bash($ROOT/p2v *),Bash($(cd "$ROOT" && pwd -P)/p2v *),Bash(ls *),Bash(cat *),Bash(head *),Bash(wc *),Bash(grep *),Read,Write,Edit,Glob,Grep,Task,Agent" \
+    --add-dir "$ROOT" --add-dir "$P2V_HOME" --output-format json > "$log")
+  "$SYSPY" -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('result','')); sys.exit(1 if d.get('is_error') else 0)" "$log"
 }
 
 verify() {
   need_tools
-  local agent="" scenes="" job="" full="" brief=""
+  local scenes="" job="" full="" brief=""
   while [ $# -gt 0 ]; do case "$1" in
-    --agent) agent="${2:-}"; shift 2 ;; --scenes) scenes="${2:-}"; shift 2 ;; --full) full=--full; shift ;;
+    --scenes) scenes="${2:-}"; shift 2 ;; --full) full=--full; shift ;;
     --brief) brief=1; shift ;; *) job="$1"; shift ;; esac; done
   need_job "$job"
   local J="$P2V_JOBS/$job" scope="the whole video"
@@ -212,20 +201,19 @@ $J/$out is the previous report ($prev): edit it in place. Set the first line to 
   if [ "$round" -gt 4 ]; then echo "p2v: round $round. SKILL.md allows 3 fix rounds: report BLOCKED with the open items instead of looping" >&2; fi
   echo "verify round $round ($mode), job $job, scope: $scope -> $J/$out${delta:+  (delta: $J/$delta)}"
   if [ -n "$brief" ]; then printf '%s\n' "$prompt"; return 0; fi   # brief for a verifier subagent (Claude Code)
-  [ -n "$agent" ] && export P2V_AGENT="$agent"
-  agent=$(pick_agent) || exit 1
+  need_claude
   mkdir -p "$P2V_HOME/logs"
-  agent_exec "$agent" "$J" "$prompt" "$P2V_HOME/logs/verify_${job}.r${round}.log"
+  agent_exec "$J" "$prompt" "$P2V_HOME/logs/verify_${job}.r${round}.log"
 }
 
 scenes_cmd() {
   need_tools
-  local agent="" scenes="" job="" file="" brief=""
+  local scenes="" job="" file="" brief=""
   while [ $# -gt 0 ]; do case "$1" in
-    --agent) agent="${2:-}"; shift 2 ;; --scenes) scenes="${2:-}"; shift 2 ;; --file) file="${2:-}"; shift 2 ;;
+    --scenes) scenes="${2:-}"; shift 2 ;; --file) file="${2:-}"; shift 2 ;;
     --brief) brief=1; shift ;; *) job="$1"; shift ;; esac; done
   need_job "$job"
-  [ -n "$scenes" ] && [ -n "$file" ] || { echo "usage: p2v scenes <job> --scenes a,b,c --file scenes_<chapter>.js [--agent claude|codex] [--brief]"; exit 2; }
+  [ -n "$scenes" ] && [ -n "$file" ] || { echo "usage: p2v scenes <job> --scenes a,b,c --file scenes_<chapter>.js [--brief]"; exit 2; }
   local J="$P2V_JOBS/$job" sb
   sb=$("$PY" "$ROOT/scripts/scene_brief.py" "$job" --scenes "$scenes" --file "$file") || exit 1
   # So this writer can preview before the other chapters exist: scenes.js re-exports this file, and every chapter file
@@ -243,35 +231,25 @@ Write $J/$file with one exported factory per scene: $scenes. Import shared helpe
 Then run '$ROOT/p2v preview $job --scenes $scenes', open each sheet it wrote once, fix overflow, overlap, blank frames and text under the subtitle band, and re-preview only the scenes you changed. Run '$ROOT/p2v check $job' and fix numbers your scenes draw that it reports.
 Answer in a few lines: scenes written, anything left open."
   if [ -n "$brief" ]; then printf '%s\n' "$prompt"; return 0; fi
-  [ -n "$agent" ] && export P2V_AGENT="$agent"
-  agent=$(pick_agent) || exit 1
+  need_claude
   mkdir -p "$P2V_HOME/logs"
-  echo "scene writer: $agent, job $job, $file <- $scenes"
-  agent_exec "$agent" "$J" "$prompt" "$P2V_HOME/logs/scenes_${job}_${file%.js}.log"
+  echo "scene writer: claude, job $job, $file <- $scenes"
+  agent_exec "$J" "$prompt" "$P2V_HOME/logs/scenes_${job}_${file%.js}.log"
 }
 
 run_unattended() {
-  local agent=""
-  [ "${1:-}" = "--agent" ] && { agent="${2:-}"; shift 2; }
-  [ $# -ge 1 ] || { echo "usage: p2v run [--agent claude|codex] <arxiv link | file.pdf | pdf link> [overrides]"; exit 2; }
+  [ $# -ge 1 ] || { echo "usage: p2v run <arxiv link | file.pdf | pdf link> [overrides]"; exit 2; }
   need_tools
-  [ -n "$agent" ] && export P2V_AGENT="$agent"
-  agent=$(pick_agent) || exit 1
+  need_claude
   local src="$1"; shift
-  # Fetch here, outside the agent, so agent sandboxes without network (Codex by default) still work.
+  # Fetch here, before the agent starts, so a failed download stops the run early.
   local out; out=$("$PY" "$ROOT/scripts/fetch_paper.py" "$src") || { echo "$out"; exit 2; }
   echo "$out"
   local id; id=$(printf '%s' "$out" | "$SYSPY" -c "import json,re,sys; t=sys.stdin.read(); m=re.search(r'\{.*?\n\}', t, re.S); print(json.loads(m.group(0))['job'])") \
     || { echo "p2v: could not read the job id from the fetch output"; exit 2; }
-  mkdir -p "$P2V_HOME/logs"; local log="$P2V_HOME/logs/$id.$agent.log"
-  echo "doc2course: $id via $agent  (log: $log)"
-  if [ "$agent" = claude ]; then
-    agent_exec claude "$P2V_HOME" "/doc2course $id $*" "$log"
-  else
-    agent_exec codex "$P2V_HOME" "Make the doc2course explainer video for job '$id' (already fetched into $P2V_JOBS/$id). Overrides: ${*:-none}.
-Read $ROOT/SKILL.md first and follow it from step 2; the skill folder is $ROOT and every command is $ROOT/p2v <subcommand>.
-This is an unattended run: do not ask questions; stop only where SKILL.md says to stop." "$log"
-  fi
+  mkdir -p "$P2V_HOME/logs"; local log="$P2V_HOME/logs/$id.claude.log"
+  echo "doc2course: $id via claude  (log: $log)"
+  agent_exec "$P2V_HOME" "/doc2course $id $*" "$log"
 }
 
 CMD="${1:-help}"; shift || true

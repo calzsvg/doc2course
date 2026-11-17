@@ -5,5 +5,5 @@
   "homepage": "https://github.com/calzsvg/doc2course",
   "repository": "https://github.com/calzsvg/doc2course",
   "license": "MIT",
-  "keywords": ["arxiv", "paper", "lecture", "slides", "pdf", "video", "explainer", "tts", "threejs", "codex"]
+  "keywords": ["arxiv", "paper", "lecture", "slides", "pdf", "video", "explainer", "tts", "threejs"]
 }

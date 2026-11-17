@@ -185,8 +185,7 @@ class Paths(unittest.TestCase):
         try:
             cache = os.path.join(home, '.claude', 'plugins', 'cache', 'mkt', 'doc2course', 'abc123')
             skills = os.path.join(home, '.claude', 'skills', 'doc2course')
-            codex = os.path.join(home, '.codex', 'skills', 'doc2course')
-            for d in (cache, skills, codex):
+            for d in (cache, skills):
                 os.makedirs(os.path.join(d, 'scripts'))
                 shutil.copy(os.path.join(ROOT, 'scripts', 'p2v_paths.py'), os.path.join(d, 'scripts'))
             p = self.paths(cache, home)
@@ -195,9 +194,6 @@ class Paths(unittest.TestCase):
             p = self.paths(skills, home)
             self.assertEqual(p['P2V_TOOLS'], os.path.join(skills, '.tools'))
             self.assertEqual(p['P2V_OUT'], os.path.join(home, 'doc2course', 'videos'))
-            p = self.paths(codex, home)
-            self.assertEqual(p['P2V_TOOLS'], os.path.join(codex, '.tools'))
-            self.assertEqual(p['P2V_JOBS'], os.path.join(home, 'doc2course', 'jobs'))
             p = self.paths(skills, home, P2V_HOME='/tmp/x y')
             self.assertEqual(p['P2V_JOBS'], '/tmp/x y/jobs')
         finally:

@@ -1,8 +1,7 @@
 # Verification (replaces script approval)
 
 The writer and the verifier must be different contexts. The agent that wrote the script does not
-grade it. Use a fresh subagent (Claude Code: Task/Agent tool) or a separate agent process (`p2v verify <id>
-[--agent claude|codex]`, for Codex or any agent without subagents; ideally a different model than the writer). It sees
+grade it. Use a fresh subagent (Claude Code: Task/Agent tool) or a separate agent process (`p2v verify <id>`, a fresh `claude -p` process). It sees
 only: `paper/paper.txt`, `paper/transcribed.txt` (if any), `paper/meta.json`, `paper/pages/*.jpg`, `script.json`,
 `claims.json`, `BRIEF.md`, the scene files, `build/VERIFY_auto.md`, `build/preview_*.jpg`, `build/onscreen.json`, and
 this file. It runs after the scenes exist and the preview is made (SKILL.md step 9).

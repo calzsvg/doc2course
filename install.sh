@@ -1,22 +1,16 @@
 #!/usr/bin/env bash
 # doc2course installer / updater (git clone instead of the plugin marketplace).
-#   curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2course/main/install.sh | bash                 # Claude Code
-#   curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2course/main/install.sh | bash -s -- --codex   # Codex
-#   ... | bash -s -- --both                                                                              # both agents
-# Run it again to update. Claude Code: ~/.claude/skills/doc2course (/doc2course). Codex: ${CODEX_HOME:-~/.codex}/skills/doc2course
-# ($doc2course). --both clones once for Claude Code and links the Codex folder to it.
-# Override the clone location with P2V_DIR=/path (e.g. on an external disk; the agent folders then get a symlink to it,
+#   curl -fsSL https://raw.githubusercontent.com/calzsvg/doc2course/main/install.sh | bash
+# Run it again to update. Installs into ~/.claude/skills/doc2course (Claude Code: /doc2course).
+# Override the clone location with P2V_DIR=/path (e.g. on an external disk; the skill folder then gets a symlink to it,
 # and tools, jobs and videos all stay next to the clone).
 set -euo pipefail
 
 # Everything runs inside main, called on the last line, so a download cut off halfway executes nothing.
 main() {
-  local target="claude" a
-  for a in "$@"; do case "$a" in --codex) target=codex ;; --both) target=both ;; --claude) target=claude ;;
-    *) echo "doc2course: unknown option $a (--claude, --codex, --both)"; exit 2 ;; esac; done
-  local claude_dir="$HOME/.claude/skills/doc2course" codex_dir="${CODEX_HOME:-$HOME/.codex}/skills/doc2course"
-  local default; [ "$target" = codex ] && default="$codex_dir" || default="$claude_dir"
-  local dir="${P2V_DIR:-$default}" repo="https://github.com/calzsvg/doc2course.git" c
+  [ $# -eq 0 ] || { echo "doc2course: unknown option $1 (the installer takes no options)"; exit 2; }
+  local claude_dir="$HOME/.claude/skills/doc2course"
+  local dir="${P2V_DIR:-$claude_dir}" repo="https://github.com/calzsvg/doc2course.git" c
   for c in git node npm python3 curl; do command -v "$c" >/dev/null || { echo "doc2course: '$c' is required"; exit 1; }; done
   if [ -d "$dir/.git" ]; then
     echo "== updating $dir"
@@ -26,15 +20,15 @@ main() {
   else
     echo "== installing into $dir"; mkdir -p "$(dirname "$dir")"; git clone --depth 1 "$repo" "$dir"
   fi
-  link() {   # agent skill folder -> clone (when the clone lives elsewhere)
+  link() {   # skill folder -> clone (when the clone lives elsewhere)
     local l="$1"; [ "$l" = "$dir" ] && return 0
     mkdir -p "$(dirname "$l")"
     if [ -L "$l" ] || [ ! -e "$l" ]; then ln -sfn "$dir" "$l"; echo "linked $l -> $dir"; else echo "note: $l exists; not replaced"; fi
   }
-  case "$target" in claude) link "$claude_dir" ;; codex) link "$codex_dir" ;; both) link "$claude_dir"; link "$codex_dir" ;; esac
+  link "$claude_dir"
   "$dir/p2v" setup
   local videos; videos=$("$dir/p2v" paths | sed -n "s/^export P2V_OUT='\(.*\)'$/\1/p")
-  printf '\ndoc2course is ready.\n  Claude Code:  /doc2course ~/Downloads/lecture.pdf\n  Codex:        $doc2course ~/Downloads/lecture.pdf\n  Videos land in: %s\n  Update later:   run this installer again\n' "$videos"
+  printf '\ndoc2course is ready.\n  Claude Code:  /doc2course ~/Downloads/lecture.pdf\n  Videos land in: %s\n  Update later:   run this installer again\n' "$videos"
 }
 
 main "$@"
